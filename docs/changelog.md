@@ -14,6 +14,10 @@ See the [Contributing Guide](contributing.md) for details.
 
 ## Unreleased
 
+### Added
+
+* Allow a class on generated tables (fork issue #3).
+
 ### Fixed
 
 * The `toc` extension no longer raises `TypeError` for a heading whose
