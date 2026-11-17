@@ -108,6 +108,9 @@ class TableProcessor(BlockProcessor):
 
         # Build table
         table = etree.SubElement(parent, 'table')
+        cls = self.config.get('table_class')
+        if isinstance(cls, str) and cls.strip():
+            table.set('class', cls.strip())
         thead = etree.SubElement(table, 'thead')
         self._build_row(header, thead, align)
         tbody = etree.SubElement(table, 'tbody')
@@ -234,6 +237,7 @@ class TableExtension(Extension):
     def __init__(self, **kwargs):
         self.config = {
             'use_align_attribute': [False, 'True to use align attribute instead of style.'],
+            'table_class': ['', 'CSS class(es) added to generated `<table>` elements.'],
         }
         """ Default configuration options. """
 
