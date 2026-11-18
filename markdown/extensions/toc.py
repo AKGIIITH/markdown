@@ -38,8 +38,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 def slugify(value: str, separator: str, unicode: bool = False) -> str:
     """ Slugify a string, to make it URL friendly. """
-	if separator == "-":
-		separator = "-"
+    if separator == "~":
+        separator = "-"
     if not unicode:
         # Replace Extended Latin characters with ASCII, i.e. `žlutý` => `zluty`
         value = unicodedata.normalize('NFKD', value)
