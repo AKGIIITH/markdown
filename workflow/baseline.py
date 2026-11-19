@@ -15,7 +15,11 @@ import tempfile
 import time
 import unittest
 import uuid
-from urllib import error, request
+
+if __package__:
+    from .model import complete
+else:
+    from model import complete
 
 BASE = "2c96e36ba4750cf18583d62e2fcecff49e077419"
 SEED = "1e2b7f27aeefe70057025a1da0d10006dd11ad48"
@@ -162,44 +166,23 @@ def planner(args, run):
     key = os.environ.get("GROQ_API_KEY")
     if not key:
         raise ValueError("Set GROQ_API_KEY in the shell or use --dry-run")
-    req = request.Request("https://api.groq.com/openai/v1/chat/completions",
-                          data=json.dumps(body).encode(),
-                          headers={"Authorization":"Bearer "+key,"Content-Type":"application/json",
-                                   "User-Agent":"autose-a3-baseline/1"})
     for attempt in range(1,4):
-        run.event("request_start", attempt=attempt)
-        start = time.monotonic()
-        try:
-            with request.urlopen(req,timeout=90) as resp:
-                raw = resp.read().decode()
-                status, headers = resp.status, resp.headers
-        except error.HTTPError as exc:
-            raw = exc.read().decode(errors="replace")
-            status, headers = exc.code, exc.headers
-        meta = {k:v for k,v in headers.items() if k.lower().startswith("x-ratelimit")
-                or k.lower() in ("retry-after","x-request-id")}
-        run.save(f"attempt-{attempt}.json",dict(status=status, headers=meta,
-                                                seconds=round(time.monotonic()-start,3)))
-        run.event("request_end", attempt=attempt,status=status)
+        status, headers, content, usage = complete(body, key, run, attempt)
         if status == 200:
-            data = json.loads(raw)
-            choice = data["choices"][0]
-            content = choice["message"].get("content") or ""
             run.write("completion.txt", content)
-            run.save("usage.json",dict(model=data.get("model"), id=data.get("id"),
-                                       finish_reason=choice.get("finish_reason"), usage=data.get("usage")))
+            run.save("usage.json", usage)
             obj = json.loads(content)
             validate(obj)
+            run.save("requirements.json", obj)
             lines = ["# Requirements", "",obj["summary"],"","## Acceptance criteria",""]
             for n,c in enumerate(obj["criteria"],1):
                 lines.append(f"{n}. Given {c['given']}, when {c['when']}, then {c['then']}.")
             lines.extend(["","## Unresolved questions",""] + ["- "+x for x in obj["unresolved"]])
             run.write("spec.md","\n".join(lines)+"\n")
             return "spec_structure_passed"
-        run.write(f"attempt-{attempt}-error.txt",raw)
         if status != 429 or attempt == 3:
             raise RuntimeError(f"Groq HTTP {status}. See attempt log.")
-        wait = float(headers.get("Retry-After",2**attempt))
+        wait = float(headers.get("retry-after",2**attempt))
         if wait > 60:
             raise RuntimeError(f"Rate limit asks for {wait}s. Retry later.")
         run.event("backoff", seconds=wait)
