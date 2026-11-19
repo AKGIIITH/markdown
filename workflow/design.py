@@ -28,7 +28,10 @@ TOOLS = [
                        "required": ["prefix"], "additionalProperties": False},
     }},
     {"type": "function", "function": {
-        "name": "read_file", "description": "Read up to 120 lines at a numbered range of a pinned public file.",
+        "name": "read_file", "description": (
+            "Read an inclusive line range from a pinned public file. Returns at most 120 lines "
+            "and reports the next unread line when the requested range is larger."
+        ),
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string"},
             "start": {"type": "integer", "minimum": 1},
@@ -55,16 +58,18 @@ class Source:
         path, start, end = (args[key] for key in ("path", "start", "end"))
         if not isinstance(path, str) or path not in self.paths:
             return {"error": "Path is outside the pinned public file list"}
-        if type(start) is not int or type(end) is not int or not 1 <= start <= end < start + 120:
-            return {"error": "Use a positive inclusive range of at most 120 lines"}
+        if type(start) is not int or type(end) is not int or not 1 <= start <= end:
+            return {"error": "Use a positive inclusive line range"}
         lines = application_file(self.repo, self.revision, path).decode("utf-8").splitlines()
         if start > len(lines):
             return {"error": "Start is past the end of the file", "total_lines": len(lines)}
-        text = "\n".join(f"{index}: {line}" for index, line in enumerate(lines[start - 1:end], start))
+        last = min(end, start + 119, len(lines))
+        text = "\n".join(f"{index}: {line}" for index, line in enumerate(lines[start - 1:last], start))
         if len(text) > 6500:
             return {"error": "Range exceeds the character bound; request fewer lines"}
         self.reads.add(path)
-        return dict(path=path, start=start, end=min(end, len(lines)), total_lines=len(lines), text=text)
+        return dict(path=path, start=start, end=last, total_lines=len(lines), text=text,
+                    next_start=last + 1 if last < min(end, len(lines)) else None)
 
 
 def validate_design(text, criteria_count, reads):
@@ -90,6 +95,15 @@ def plan(inputs, source, run, respond, max_calls, completion_cap):
         body = dict(model=MODEL, temperature=0, max_completion_tokens=completion_cap, messages=messages)
         if index < max_calls:
             body.update(tools=TOOLS, parallel_tool_calls=False)
+        else:
+            body["messages"] = [*messages, {
+                "role": "user",
+                "content": (
+                    "This is the final Design turn. The lookup budget is exhausted. "
+                    "Do not call tools. Write the Markdown handoff using the evidence already collected. "
+                    "If required evidence is missing, state what could not be inspected."
+                ),
+            }]
         run.save(f"design-request-{index}.json", body)
         status, _, message, usage = respond(body, index)
         if status != 200 or not isinstance(message, dict):
