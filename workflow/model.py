@@ -5,9 +5,9 @@ import time
 from urllib import error, request
 
 
-def complete(body, key, run, attempt):
+def chat(body, key, run, attempt):
     request_bytes = json.dumps(body).encode("utf-8")
-    run.write("request-body.json", request_bytes.decode("utf-8"))
+    run.write(f"attempt-{attempt}-request.json", request_bytes.decode("utf-8"))
     req = request.Request(
         "https://api.groq.com/openai/v1/chat/completions",
         data=request_bytes,
@@ -57,9 +57,20 @@ def complete(body, key, run, attempt):
         run.write(f"attempt-{attempt}-error.txt", raw)
         return status, meta, None, usage
 
-    content = choice.get("message", {}).get("content")
-    if not isinstance(content, str):
+    message = choice.get("message")
+    if not isinstance(message, dict):
         run.write(f"attempt-{attempt}-error.txt", raw)
+        raise ValueError("Groq returned no assistant message")
+    run.save(f"attempt-{attempt}-message.json", message)
+    return status, meta, message, usage
+
+
+def complete(body, key, run, attempt):
+    status, meta, message, usage = chat(body, key, run, attempt)
+    if message is None:
+        return status, meta, None, usage
+    content = message.get("content")
+    if not isinstance(content, str):
         raise ValueError("Groq returned no text completion")
     run.write(f"attempt-{attempt}-completion.txt", content)
     return status, meta, content, usage

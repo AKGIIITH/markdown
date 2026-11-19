@@ -128,6 +128,8 @@ def main():
         answer = json.loads(content)
         outcome = check_quality(answer, len(proposal["criteria"]))
         run.save("judgment.json", answer)
+        if outcome == "passed":
+            run.save("accepted-requirements.json", proposal)
     except (OSError, RuntimeError, ValueError) as exc:
         outcome = "quality_check_failed"
         run.save("error.json", dict(type=type(exc).__name__, message=str(exc)))
