@@ -124,6 +124,8 @@ def main():
 
     os.umask(0o077)
     run = Run(args.out.resolve(), "controller")
+    if args.live:
+        os.environ["AUTOSE_RATE_STATE"] = str(run.path / "provider-rate-state.json")
     run.save("manifest.json", dict(
         issue=args.issue, revision=CASES[args.issue][0], mode="live" if args.live else "fixture",
         harness_commit=git(ROOT, "rev-parse", "HEAD").decode().strip(),

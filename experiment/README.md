@@ -46,6 +46,27 @@ The GitHub Actions source accepts an `autose:run` issue label or an exact
 `/autose run` issue comment from an authorized maintainer. Its preparation
 and test jobs use separate permissions and artifacts. Hosted execution
 requires the workflow on the default branch and the approved Groq secret and
-budget variables. The source currently stops at Release preflight. Autonomous
-publication, CI verification, independent review, the five baseline workflow
-runs and the experiment comparisons remain pending.
+budget variables. The release job verifies the pinned fork and base and opens
+or reuses a PR for the tested head. A read-only job verifies CI before starting
+independent review. Review posting is a separate job. Offline responses
+exercised PR creation and reuse, absent CI, an incomplete CI matrix, stale PR
+heads, and the two-round review cap. No hosted run has exercised these jobs.
+
+## Deployment and evaluation status
+
+| Work | Status |
+| --- | --- |
+| Issue trigger, Requirements through Testing, Release bundle | Implemented and replayed locally with fixtures |
+| Publication, exact-head CI gate, Reviewer and review posting | Implemented and exercised with offline GitHub and model fixtures |
+| Review changes return path | The poster records the responsible stage and next round. Automatic execution of the repair and updating the same PR remain pending. |
+| Hosted baseline for five issues | Pending activation and runs |
+| Experiments and final evidence | Two ADR experiments await selection after baseline observations. Reviewer-check PRs, aggregate results, report and demo remain pending. |
+
+The fork's protected `main` must contain the workflow before issue events
+can start it. Publication and review are opt-in. Deployment uses the
+`GROQ_API_KEY`, `AUTOSE_RELEASE_TOKEN`, and `AUTOSE_REVIEW_POST_TOKEN`
+repository secrets with the approved `AUTOSE_*` budget variables.
+The release credential needs repository content and PR write access. The
+posting credential needs PR write access and an identity separate from the
+PR author. The reviewer job itself receives a read-only GitHub token. The
+workflow has no merge step.

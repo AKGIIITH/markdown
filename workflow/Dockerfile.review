@@ -1,0 +1,5 @@
+FROM python:3.14-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libtidy58 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir coverage pyyaml pytidylib

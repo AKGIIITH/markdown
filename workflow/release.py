@@ -41,6 +41,15 @@ def prepare_candidate(repo, revision, patch, issue, out):
                        check=True, capture_output=True)
         git_run(checkout, "checkout", "--quiet", "--detach", revision)
         git_run(checkout, "apply", "--index", "-", input=patch)
+        changes = git(checkout, "diff", "--cached", "--name-status", "--no-renames", "-z").decode().split("\0")
+        for status, path in zip(changes[::2], changes[1::2]):
+            if status == "A" and path == "tests/test_autose_acceptance.py":
+                continue
+            if status != "M" or not path.startswith("markdown/") or not path.endswith(".py"):
+                raise ValueError(f"Candidate changes an unauthorized release path: {path}")
+        modes = git(checkout, "ls-files", "--stage", "-z", "--", "markdown", "tests/test_autose_acceptance.py")
+        if any(entry and not entry.startswith(b"100644 ") for entry in modes.split(b"\0")):
+            raise ValueError("Release paths must be ordinary non-executable files")
         tree = git(checkout, "write-tree").decode().strip()
         base_tree = git(repo, "rev-parse", f"{revision}^{{tree}}").decode().strip()
         if tree == base_tree:

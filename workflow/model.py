@@ -1,8 +1,31 @@
 """One instrumented Groq call. The caller owns the retry and stage policy."""
 
 import json
+import os
+from pathlib import Path
+import re
 import time
 from urllib import error, request
+
+
+def pace(path, request_size, completion_cap, run):
+    if path is None or not path.is_file():
+        return
+    quota = json.loads(path.read_text(encoding="utf-8"))
+    estimated = request_size // 3 + completion_cap
+    delay = max(0, quota["reset_at"] - time.monotonic())
+    if estimated > quota["remaining"] and delay:
+        run.event("provider_pacing", seconds=round(delay, 3), remaining=quota["remaining"])
+        time.sleep(delay)
+
+
+def save_quota(path, headers):
+    raw = headers.get("x-ratelimit-remaining-tokens", "")
+    match = re.fullmatch(r"(?:(\d+)m)?([\d.]+)s", headers.get("x-ratelimit-reset-tokens", ""))
+    if path is not None and raw.isdigit() and match:
+        delay = int(match[1] or 0) * 60 + float(match[2])
+        path.write_text(json.dumps(dict(remaining=int(raw), reset_at=time.monotonic() + delay + 1)),
+                        encoding="utf-8")
 
 
 def chat(body, key, run, attempt):
@@ -17,6 +40,9 @@ def chat(body, key, run, attempt):
             "User-Agent": "autose-a3-baseline/1",
         },
     )
+    state = os.getenv("AUTOSE_RATE_STATE")
+    quota_path = Path(state) if state else None
+    pace(quota_path, len(request_bytes), body.get("max_completion_tokens", 0), run)
     run.event("request_start", attempt=attempt)
     start = time.monotonic()
     transport_error = None
@@ -35,6 +61,7 @@ def chat(body, key, run, attempt):
         name.lower(): value for name, value in headers.items()
         if name.lower().startswith("x-ratelimit") or name.lower() in ("retry-after", "x-request-id")
     }
+    save_quota(quota_path, meta)
     run.save(f"attempt-{attempt}.json", dict(
         status=status, headers=meta,
         seconds=round(time.monotonic() - start, 3),

@@ -183,3 +183,168 @@ jobs:
         with:
           name: autose-release-preflight
           path: ${{ runner.temp }}/autose-release
+
+  publish:
+    needs: [authorize, release-preflight]
+    if: vars.AUTOSE_ENABLE_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: autose-publish-${{ needs.authorize.outputs.issue }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autose-release-preflight
+          path: ${{ runner.temp }}/autose-release
+      - name: Publish the tested candidate to the fork
+        env:
+          AUTOSE_GITHUB_TOKEN: ${{ secrets.AUTOSE_RELEASE_TOKEN }}
+          ISSUE: ${{ needs.authorize.outputs.issue }}
+        run: |
+          input=("$RUNNER_TEMP"/autose-release/*-release-preflight-*)
+          test "${#input[@]}" -eq 1
+          python -m workflow.publish --issue "$ISSUE" --out "$RUNNER_TEMP/autose-publication" \
+            open --preflight "${input[0]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autose-publication
+          path: ${{ runner.temp }}/autose-publication
+
+  verify-ci:
+    needs: [authorize, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autose-publication
+          path: ${{ runner.temp }}/autose-publication
+      - name: Verify CI on the current PR head
+        env:
+          AUTOSE_GITHUB_TOKEN: ${{ github.token }}
+          ISSUE: ${{ needs.authorize.outputs.issue }}
+        run: |
+          input=("$RUNNER_TEMP"/autose-publication/*-publication-*)
+          test "${#input[@]}" -eq 1
+          python -m workflow.publish --issue "$ISSUE" --out "$RUNNER_TEMP/autose-ci" \
+            ci --publication "${input[0]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autose-ci
+          path: ${{ runner.temp }}/autose-ci
+
+  review:
+    needs: [authorize, verify-ci]
+    if: vars.AUTOSE_ENABLE_REVIEW == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autose-ci
+          path: ${{ runner.temp }}/autose-ci
+      - name: Build the public test runner for independent review
+        run: docker build --tag autose-review-checks --file workflow/Dockerfile.review workflow
+      - name: Run independent review on the verified head
+        env:
+          AUTOSE_GITHUB_TOKEN: ${{ github.token }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ISSUE: ${{ needs.authorize.outputs.issue }}
+          BUDGET: ${{ vars.AUTOSE_PROVIDER_BUDGET }}
+          LOOKUPS: ${{ vars.AUTOSE_REVIEW_LOOKUPS }}
+          LOOKUP_CAP: ${{ vars.AUTOSE_REVIEW_LOOKUP_CAP }}
+          COMPLETION_CAP: ${{ vars.AUTOSE_REVIEW_CAP }}
+        run: |
+          input=("$RUNNER_TEMP"/autose-ci/*-ci-verification-*)
+          test "${#input[@]}" -eq 1
+          python -m workflow.review --issue "$ISSUE" --out "$RUNNER_TEMP/autose-review" \
+            --ci-run "${input[0]}" --live --budget-confirmation "$BUDGET" \
+            --lookups "$LOOKUPS" --lookup-cap "$LOOKUP_CAP" --completion-cap "$COMPLETION_CAP" \
+            --check-image autose-review-checks
+      - name: Collect the review posting handoff
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, shutil
+          temp = Path(os.environ["RUNNER_TEMP"])
+          review, = (temp / "autose-review").glob("*-review-*")
+          out = temp / "autose-review-post-input"
+          out.mkdir()
+          for name in ("manifest.json", "gate.json", "pr.json", "review-result.json", "review.md"):
+              shutil.copyfile(review / name, out / name)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autose-review
+          path: |
+            ${{ runner.temp }}/autose-review/*/*.json
+            ${{ runner.temp }}/autose-review/*/*.jsonl
+            ${{ runner.temp }}/autose-review/*/*.log
+            ${{ runner.temp }}/autose-review/*/*.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: autose-review-post-input
+          path: ${{ runner.temp }}/autose-review-post-input
+
+  post-review:
+    needs: [authorize, review]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: autose-review-post-${{ needs.authorize.outputs.issue }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autose-review-post-input
+          path: ${{ runner.temp }}/autose-review-post-input
+      - name: Post the live findings on the current head
+        env:
+          AUTOSE_REVIEW_POST_TOKEN: ${{ secrets.AUTOSE_REVIEW_POST_TOKEN }}
+        run: |
+          python -m workflow.post_review --review-run "$RUNNER_TEMP/autose-review-post-input" \
+            --out "$RUNNER_TEMP/autose-posted-review"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autose-posted-review
+          path: ${{ runner.temp }}/autose-posted-review
