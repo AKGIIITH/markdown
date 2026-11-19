@@ -280,6 +280,7 @@ def main():
 
         text = plan(inputs, source, run, respond, args.max_calls, args.completion_cap, final_cap)
         run.write("design.md", text)
+        run.save("requirements.json", requirements)
     except (OSError, KeyError, RuntimeError, ValueError) as exc:
         run.save("error.json", dict(type=type(exc).__name__, message=str(exc)))
         run.save("gate.json", dict(outcome="design_failed"))

@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -138,6 +139,13 @@ def test_stage(args, run, revision):
         ], checkout, home)
         observed[side] = result
 
+    test_diff = subprocess.run(
+        ["git", "diff", "--no-index", "--no-ext-diff", "--", os.devnull, str(relative_test)],
+        cwd=candidate, capture_output=True, check=False,
+    )
+    if test_diff.returncode != 1:
+        return "public_test_patch_failed"
+    run.write("diff.patch", (patch + test_diff.stdout).decode("utf-8"))
     suite_command = [sys.executable, "-m", "unittest", "discover", "tests", "-v"]
     suite = execute(run, "candidate-suite", suite_command, candidate, home)
     if suite["exit_code"] != 0:
@@ -156,6 +164,29 @@ def test_stage(args, run, revision):
     return "passed"
 
 
+def write_test_report(run, issue, revision, outcome):
+    lines = [
+        f"# Issue {issue} public test report", "",
+        f"Status `{outcome}` at application revision `{revision}`.",
+        "Both checkouts use the same public test module.", "",
+        "| Check | Exit | Seconds | Passed | Skipped | Failures | Errors |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for name in ("apply", "compile", "clean-public", "candidate-public", "candidate-suite", "clean-suite"):
+        record = run.path / f"{name}.json"
+        if not record.exists():
+            continue
+        result = json.loads(record.read_text(encoding="utf-8"))
+        counts = result.get("counts") or {}
+        lines.append(
+            f"| [{name}]({name}.json) | {result['exit_code']} | {result['seconds']} "
+            f"| {counts.get('passed', '')} | {counts.get('skipped', '')} "
+            f"| {counts.get('failures', '')} | {counts.get('errors', '')} |"
+        )
+    lines.extend(["", "Each command record has matching stdout and stderr logs.", ""])
+    run.write("test_report.md", "\n".join(lines))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--issue", type=int, choices=CASES, required=True)
@@ -165,8 +196,9 @@ def main():
     source = commands.add_parser("source", help="Read a public file at the mapped application revision.")
     source.add_argument("path")
     check = commands.add_parser("check", help="Replay a local build and testing gate from supplied artifacts.")
-    check.add_argument("--patch", type=Path, required=True)
-    check.add_argument("--tests", type=Path, required=True)
+    check.add_argument("--builder-run", type=Path, help="Use the patch and tests from a completed Builder run.")
+    check.add_argument("--patch", type=Path)
+    check.add_argument("--tests", type=Path)
     check.add_argument("--expected-regressions", type=int, required=True, choices=range(1, 11), metavar="1..10")
     check.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -180,16 +212,35 @@ def main():
         sys.stdout.buffer.write(application_file(args.repo, revision, args.path))
         return 0
 
+    if args.builder_run:
+        if args.patch or args.tests:
+            parser.error("--builder-run replaces --patch and --tests")
+        try:
+            manifest = json.loads((args.builder_run / "manifest.json").read_text(encoding="utf-8"))
+            gate = json.loads((args.builder_run / "gate.json").read_text(encoding="utf-8"))
+            if (manifest["issue"], manifest["revision"], gate["outcome"]) != (
+                args.issue, revision, "ready_for_test_runner",
+            ):
+                raise ValueError("Builder run does not match the issue, revision and expected gate")
+        except (OSError, KeyError, ValueError) as exc:
+            parser.error(str(exc))
+        args.patch = args.builder_run / "diff.patch"
+        args.tests = args.builder_run / "public-tests.py"
+    elif not (args.patch and args.tests):
+        parser.error("Supply --builder-run or both --patch and --tests")
+
     os.umask(0o077)
     run = Run(args.out.resolve(), "public-testing-replay")
     run.save("manifest.json", dict(issue=args.issue, revision=revision, base_branch=base_branch,
-                                  mode="local_artifact_replay", model_calls=0, python=sys.version))
+                                  mode="local_artifact_replay", model_calls=0, python=sys.version,
+                                  parent_run=str(args.builder_run.resolve()) if args.builder_run else None))
     try:
         outcome = test_stage(args, run, revision)
     except (OSError, SyntaxError, subprocess.SubprocessError, ValueError) as exc:
         run.save("runner-error.json", dict(type=type(exc).__name__, message=str(exc)))
         outcome = "runner_error"
     run.save("gate.json", dict(outcome=outcome))
+    write_test_report(run, args.issue, revision, outcome)
     print(outcome)
     return 0 if outcome == "passed" else 1
 
