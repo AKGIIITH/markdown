@@ -159,7 +159,9 @@ def test_stage(args, run, revision):
         return "public_test_discovery_mismatch"
     if after["exit_code"] != 0 or after["counts"]["passed"] != after["counts"]["tests"]:
         return "candidate_public_tests_failed_or_skipped"
-    if before["exit_code"] != 1 or before["counts"]["failures"] + before["counts"]["errors"] != args.expected_regressions:
+    regressions = before["counts"]["failures"] + before["counts"]["errors"]
+    expected = args.expected_regressions
+    if before["exit_code"] != 1 or regressions < 1 or (expected is not None and regressions != expected):
         return "clean_regression_expectation_not_met"
     return "passed"
 
@@ -199,7 +201,8 @@ def main():
     check.add_argument("--builder-run", type=Path, help="Use the patch and tests from a completed Builder run.")
     check.add_argument("--patch", type=Path)
     check.add_argument("--tests", type=Path)
-    check.add_argument("--expected-regressions", type=int, required=True, choices=range(1, 11), metavar="1..10")
+    check.add_argument("--expected-regressions", type=int, choices=range(1, 11), metavar="1..10",
+                       help="Check an exact clean regression count for a known fixture.")
     check.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     base_branch, revision = CASES_BY_BASE[args.issue]
@@ -239,7 +242,9 @@ def main():
     except (OSError, SyntaxError, subprocess.SubprocessError, ValueError) as exc:
         run.save("runner-error.json", dict(type=type(exc).__name__, message=str(exc)))
         outcome = "runner_error"
-    run.save("gate.json", dict(outcome=outcome))
+    candidate_patch = run.path / "diff.patch"
+    tested_hash = hashlib.sha256(candidate_patch.read_bytes()).hexdigest() if outcome == "passed" else None
+    run.save("gate.json", dict(outcome=outcome, candidate_patch_sha256=tested_hash))
     write_test_report(run, args.issue, revision, outcome)
     print(outcome)
     return 0 if outcome == "passed" else 1

@@ -223,6 +223,7 @@ def main():
     parser.add_argument("--requirements-run", type=Path, required=True)
     parser.add_argument("--architecture", type=Path, default=ROOT / "architecture/ARCHITECTURE.md")
     parser.add_argument("--repo", type=Path, default=ROOT)
+    parser.add_argument("--issue-file", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--max-calls", type=int, required=True)
     parser.add_argument("--completion-cap", type=int, default=3000)
@@ -257,7 +258,8 @@ def main():
             raise ValueError("Live Design requires live Requirements quality evidence")
         requirements = read_json(args.requirements_run / "accepted-requirements.json")
         validate(requirements)
-        inputs = dict(issue=(args.repo / "experiment/issues" / issue_file).read_text(encoding="utf-8"),
+        issue_path = args.issue_file or args.repo / "experiment/issues" / issue_file
+        inputs = dict(issue=issue_path.read_text(encoding="utf-8"),
                       requirements=requirements, revision=revision,
                       architecture=args.architecture.read_text(encoding="utf-8"))
         source = Source(args.repo, revision)

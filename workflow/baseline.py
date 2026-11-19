@@ -152,9 +152,10 @@ def validate(obj):
 
 def planner(args, run):
     sha, _, filename = CASES[args.issue]
-    issue = (args.repo / "experiment/issues" / filename).read_text()
+    issue_file = getattr(args, "issue_file", None) or args.repo / "experiment/issues" / filename
+    issue = issue_file.read_text(encoding="utf-8")
     skill = args.skill.read_text()
-    body = dict(model=MODEL, temperature=0, max_completion_tokens=1800,
+    body = dict(model=MODEL, temperature=0, max_completion_tokens=getattr(args, "proposal_cap", 1800),
                 response_format={"type":"json_object"},
                 messages=[dict(role="system", content=SYSTEM+"\n\nA1 skill:\n"+skill),
                           dict(role="user", content=json.dumps({"issue":issue}))])

@@ -64,14 +64,18 @@ def main():
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--proposal", type=Path, help="Use an existing Planner proposal.")
     inputs.add_argument("--skill", type=Path, help="Run the Planner with this A1 skill before the quality check.")
+    parser.add_argument("--proposal-cap", type=int, default=1800)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--parent-run", help="Identifier of the supplied proposal's originating run.")
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--issue-file", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=Path, help="Replay a recorded or simulated quality judgment.")
     mode.add_argument("--live", action="store_true", help="Request an independent judgment from Groq.")
     parser.add_argument("--budget-confirmation", help="Document the provider budget before a live call.")
     args = parser.parse_args()
+    if args.proposal_cap < 1:
+        parser.error("--proposal-cap must be positive")
     if args.live and not (args.budget_confirmation or "").strip():
         parser.error("--live requires --budget-confirmation")
     if args.live and not os.environ.get("GROQ_API_KEY"):
@@ -106,7 +110,8 @@ def main():
     try:
         proposal = json.loads(args.proposal.read_text(encoding="utf-8"))
         validate(proposal)
-        issue = (args.repo / "experiment/issues" / issue_file).read_text(encoding="utf-8")
+        issue_path = args.issue_file or args.repo / "experiment/issues" / issue_file
+        issue = issue_path.read_text(encoding="utf-8")
         body = dict(
             model=MODEL, temperature=0, max_completion_tokens=3000,
             response_format={"type": "json_object"},
