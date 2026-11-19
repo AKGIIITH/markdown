@@ -138,8 +138,13 @@ def validate(obj):
     for criterion in criteria:
         if not isinstance(criterion, dict) or not all(nonempty(criterion.get(k)) for k in ("given","when","then")):
             raise ValueError("Each criterion needs given, when and then")
-    if not isinstance(obj.get("unresolved"), list) or not all(nonempty(x) for x in obj["unresolved"]):
-        raise ValueError("Invalid unresolved questions")
+    if "unresolved" not in obj:
+        raise ValueError("Missing required field: unresolved")
+    if not isinstance(obj["unresolved"], list):
+        raise ValueError("unresolved must be an array of question strings")
+    for index, question in enumerate(obj["unresolved"]):
+        if not nonempty(question):
+            raise ValueError(f"unresolved[{index}] must be a nonempty string")
 
 def planner(args, run):
     sha, _, filename = CASES[args.issue]
