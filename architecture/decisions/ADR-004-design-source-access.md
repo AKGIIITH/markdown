@@ -15,8 +15,9 @@ what the application actually does.
 ## Decision
 
 Give the Design Planner the application architecture, the issue and the
-accepted requirements. It can list public application files by prefix and
-read bounded line ranges at the application's pinned revision. The controller
+accepted requirements. It can list public application files by prefix, search
+for a filename in application source or public tests, and read bounded line
+ranges at the application's pinned revision. The controller
 executes the reads and records each request and result. A caller-supplied
 model-call budget bounds the conversation. Design must cite both inspected
 application source and a public test and map every accepted criterion to a
