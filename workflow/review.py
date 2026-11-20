@@ -43,6 +43,10 @@ REVIEW_TOOLS = [*TOOLS, no_args_tool("run_public_suite", "Run the public unittes
 
 def parse_review(text):
     lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    for index, line in enumerate(lines[:2]):
+        labelled = re.fullmatch(r"\*\*(Verdict|Route):\*\*[ \t]+(.+)", line)
+        if labelled:
+            lines[index] = f"{labelled[1]}: {labelled[2]}"
     verdict = lines[0].removeprefix("Verdict: ") if lines and lines[0].startswith("Verdict: ") else ""
     if verdict == "APPROVE" and len(lines) >= 2:
         return dict(verdict=verdict, route=None, MERGE_READINESS_CHECK="READY_FOR_HUMAN")

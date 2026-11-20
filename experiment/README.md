@@ -153,3 +153,62 @@ The release credential needs repository content and PR write access. The
 posting credential needs PR write access and an identity separate from the
 PR author. The reviewer job itself receives a read-only GitHub token. The
 workflow has no merge step.
+
+## Assignment Parts 1–3 audit
+
+| Part | Evidence and status |
+| --- | --- |
+| 1. Repository setup | The application is pinned to `2c96e36ba4750cf18583d62e2fcecff49e077419`. Issue #2 uses seed `1e2b7f27aeefe70057025a1da0d10006dd11ad48`. The fork has five issues covering two bugs, two features, and a vague request. Each has three private tests stored outside Git. The Groq repository secret and protected default branch were verified during deployment. |
+| 2. Design before build | The component view and first ADRs were committed in `e465600`, before the integrated workflow. An instrumented Requirements pilot already existed at `6e699a6`. The strict design-before-any-agent-code condition was therefore only partly met. The original ADRs remain in Git and ADR-003 identifies the policy it replaces. |
+| 3. Workflow and evidence | The hosted issue trigger, per-job permissions, pinned public source tools and stage artifacts are implemented. Hosted baseline failures have Action links. Guided PRs and blinded review comments have real links. The hosted publish and review jobs are disabled, and there is no autonomous issue-to-PR example yet. |
+
+See the [stage and tool inventory](../architecture/views/stages.md).
+
+## Issue #3 failure trace and repair experiment
+
+The experiment reused the accepted live Requirements for the same issue
+snapshot, application pin and Groq model. Design used up to four tool calls
+and one writer call. The caps were 3,000 per lookup and 4,000 for writing.
+Builder used 3,000 for Implementation and 4,000 for the test writer.
+
+| Step | Observed result |
+| --- | --- |
+| Original Design | Four successful tool calls found and read the relevant table source and public test. The writer omitted the exact test path and guessed a default whose semantics the initial source range did not show. |
+| Design with configuration excerpts | Passed the structural gate and cited the public test. The writer ended normally after 3,769 completion tokens and still proposed `None` for a string-valued option. |
+| Builder and public runner | Builder implemented the proposed default and compiled. Identical tests had one pass and four errors on both revisions. On the candidate, the API rejected both class strings during boolean parsing. The clean full suite passed, and the candidate suite recorded four errors. The tests also missed distinct tables and assumed CSS class order. |
+| Builder repair | Given the failed public runner artifacts, the same model chose an empty-string default. The patch compiled. The test writer exhausted 4,000 completion tokens, including 3,676 reasoning tokens, and returned an incomplete module. This patch is compiled and awaits complete public tests. |
+
+The three new live stage attempts used 44,337 reported tokens, with no
+unreported responses. A separate operator-authored smoke probe passed on
+the repaired patch. It checked two distinct tables, unordered class tokens,
+default rendering, headers, and cells. The probe does not replace the public
+test-generation gate. The test-only restart was verified offline against an
+earlier fixture, including exact patch reproduction and zero Implementation
+calls. These were operator-run stage transitions. No new PR was opened.
+See [ADR-010](../architecture/decisions/ADR-010-design-configuration-evidence.md)
+and [ADR-011](../architecture/decisions/ADR-011-builder-public-feedback.md).
+
+## LangGraph Builder experiment
+
+An offline Issue #3 replay used four scripted Implementation calls, including
+one Planner answer, and one scripted test-submission call. The public tools
+returned the pinned setter excerpt and the Planner answer to Builder. The
+clean checkout recorded one public pass and two errors. The candidate passed
+all three public checks and the full suite with 1,115 passes and 111 skips.
+Release preflight reconstructed the tested candidate. A smaller call limit
+correctly rejected a clarification that would leave no call for submission.
+
+The approved live replay used Groq GPT-OSS 20B with per-call caps of 3,000
+for Implementation and 4,000 for Testing, up to four calls for either task.
+Builder's first call successfully read lines 200–258 of the pinned table
+extension. The second request received HTTP 429 `rate_limit_exceeded` on
+tokens per day. It returned no model message. No clarification, patch, or
+tests were produced in the live attempt. Known usage was 5,083 tokens with
+one unreported request. See [ADR-012](../architecture/decisions/ADR-012-langgraph-builder.md).
+
+The [full Issue #3 input and gate trace](issue-3-sdk-trace.md) compares a fresh
+run from the live issue and a separate replay from the matching accepted
+Design.
+
+The [120B experiment](issue-3-120b.md) records the larger model, the
+maintainer's scope approval, and the subsequent stage evidence.

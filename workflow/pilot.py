@@ -1,6 +1,7 @@
 """Run the local application gates against a candidate patch."""
 
 import argparse
+from difflib import unified_diff
 import hashlib
 import io
 import json
@@ -24,6 +25,7 @@ CASES_BY_BASE = {issue: ("a3/bug02-seed" if row[0] == SEED else "main", row[0])
 COUNTS = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 PUBLIC_DIRS = ("markdown", "tests", "docs")
 PUBLIC_CONFIG = ("pyproject.toml", "tox.ini", "README.md")
+CHANGELOG = "docs/changelog.md"
 
 
 def application_file(repo, revision, path):
@@ -103,11 +105,38 @@ def verify_import(run, side, checkout, home):
     return execute(run, f"{side}-import", [sys.executable, "-c", verify], checkout, home)
 
 
+def changelog_patch(repo, revision, issue, title):
+    if not 1 <= len(title) <= 180 or not title.isprintable():
+        raise ValueError("Release note title must be one printable line of at most 180 characters")
+    title = re.sub(r"([\\`*_\[\]<>])", r"\\\1", title)
+    note = f"* {title.rstrip('.')} (fork issue #{issue}).\n"
+    original = application_file(repo, revision, CHANGELOG).decode("utf-8")
+    heading = "### Added" if issue in (3, 4) else "### Fixed"
+    opening, marker, rest = original.partition("## Unreleased\n")
+    if not marker:
+        raise ValueError("Pinned changelog is missing its Unreleased section")
+    current, separator, older = rest.partition("\n## ")
+    if note in current:
+        return b""
+    if heading + "\n\n" in current:
+        current = current.replace(heading + "\n\n", heading + "\n\n" + note, 1)
+    else:
+        current = f"\n{heading}\n\n{note}\n" + current.lstrip("\n")
+    updated = opening + marker + current + separator + older
+    delta = unified_diff(original.splitlines(keepends=True), updated.splitlines(keepends=True),
+                         fromfile=f"a/{CHANGELOG}", tofile=f"b/{CHANGELOG}")
+    return (f"diff --git a/{CHANGELOG} b/{CHANGELOG}\n" + "".join(delta)).encode("utf-8")
+
+
 def test_stage(args, run, revision):
     patch = args.patch.read_bytes()
     tests = args.tests.read_bytes()
     run.write("production.diff.patch", patch.decode("utf-8"))
     run.write("public-tests.py", tests.decode("utf-8"))
+    if args.release_note:
+        note = changelog_patch(args.repo, revision, args.issue, args.release_note)
+        run.write("release-note.diff.patch", note.decode("utf-8"))
+        patch += note
     run.save("input.json", dict(
         production_sha256=hashlib.sha256(patch).hexdigest(),
         tests_sha256=hashlib.sha256(tests).hexdigest(),
@@ -227,6 +256,7 @@ def main():
     check.add_argument("--builder-run", type=Path, help="Use the patch and tests from a completed Builder run.")
     check.add_argument("--patch", type=Path)
     check.add_argument("--tests", type=Path)
+    check.add_argument("--release-note", help="Trusted one-line issue title for a required changelog entry.")
     check.add_argument("--expected-regressions", type=int, choices=range(1, 11), metavar="1..10",
                        help="Check an exact clean regression count for a known fixture.")
     check.add_argument("--out", type=Path, required=True)

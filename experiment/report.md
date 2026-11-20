@@ -159,6 +159,38 @@ provider attempt unreported.
 [Draft #11](https://github.com/AKGIIITH/markdown/pull/11),
 [Draft #12](https://github.com/AKGIIITH/markdown/pull/12).
 
+## GPT-OSS 120B follow-up
+
+Near the deadline, the maintainer chose GPT-OSS 120B on the same Groq Free
+project and retained the per-call caps. Two Requirements runs passed
+structural validation and paused over scope. The maintainer clarified the
+scope and approved the unchanged criteria. The LangGraph controller passed
+that artifact to Design and then Builder. Codex fixed the Design checker
+to accept bold criterion numbers and revalidated the unchanged draft.
+
+Groq rejected a long test submission because the request exceeded the
+free-tier per-minute token limit. Shorter subsequent requests produced
+usable tests after corrections prompted by public runtime evidence. The
+model identified an empty-string default for the configuration API. Codex
+composed the model's exact candidate-relative edit with its earlier patch.
+The final generated tests passed four of four on the candidate, detected
+the missing feature on clean source, and gave 1,116 full-suite passes and
+111 skips. Separate private evaluation passed all three cases.
+
+The trusted publisher opened [PR #15](https://github.com/AKGIIITH/markdown/pull/15).
+The first head passed the changelog check, and two style checks flagged the
+generated tests. Codex corrected blank lines and two references in one
+docstring, verified that executable test logic was identical, retested,
+and fast-forwarded the PR. The final head passed all three private checks
+and GitHub CI.
+The experiment through Testing used 69,339 known model tokens, plus one
+rejected request of unreported usage. See the [full follow-up trace](issue-3-120b.md).
+
+An independent GPT-OSS 120B review used 6,213 tokens and requested
+Implementation changes. The PR already passed configuration to the table
+processor, and GitHub CI passed. The [review comment](https://github.com/AKGIIITH/markdown/pull/15#pullrequestreview-5998959116)
+preserves the false change request with the separate operator verification.
+
 ## Limitations
 
 No hosted autonomous run produced a candidate. The improved workflow was
