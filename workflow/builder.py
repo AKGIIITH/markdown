@@ -10,7 +10,7 @@ import sys
 
 from .baseline import CASES, MODEL, Run, git, validate
 from .design import save_usage
-from .model import complete
+from .model import complete, parse_json_answer, provider_error_code
 from .pilot import ROOT, application_file, execute, export
 
 
@@ -62,7 +62,7 @@ def raw_excerpts(repo, revision, evidence):
 
 
 def apply_edits(response, sources):
-    edits = json.loads(response)["edits"]
+    edits = parse_json_answer(response)["edits"]
     if not isinstance(edits, list) or not edits:
         raise ValueError("Implementation must contain at least one source edit")
     changed = sources.copy()
@@ -129,6 +129,14 @@ def request_body(system, inputs, cap, format_type):
     )
 
 
+def testing_inputs(inputs, patch, evidence, implementation_answer, context):
+    testing = dict(**inputs, patch=patch,
+                   public_test_examples=[item for item in evidence if item["path"].startswith("tests/")])
+    if context == "retained":
+        testing["implementation_answer"] = implementation_answer
+    return testing
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--issue", type=int, choices=CASES, required=True)
@@ -138,6 +146,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--implementation-cap", type=int, required=True)
     parser.add_argument("--testing-cap", type=int, required=True)
+    parser.add_argument("--testing-context", choices=("patch_only", "retained"), default="patch_only")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--fixture", type=Path, help="JSON object with implementation and testing replies")
     mode.add_argument("--live", action="store_true")
@@ -155,7 +164,7 @@ def main():
     run.save("manifest.json", dict(
         issue=args.issue, revision=revision, parent_run=str(args.design_run.resolve()),
         mode="live" if args.live else "artifact_replay", budget_confirmation=args.budget_confirmation,
-        implementation_cap=args.implementation_cap, testing_cap=args.testing_cap,
+        implementation_cap=args.implementation_cap, testing_cap=args.testing_cap, testing_context=args.testing_context,
     ))
     outcome = "implementation_failed"
     try:
@@ -176,10 +185,19 @@ def main():
         inputs = dict(issue=issue, requirements=requirements, design=design, revision=revision)
         fixtures = read_json(args.fixture) if args.fixture else {}
 
-        def respond(stage, body, index):
+        call_index = 0
+
+        def respond(stage, body):
+            nonlocal call_index
             run.save(f"{stage}-request.json", body)
             if args.live:
-                status, _, response, usage = complete(body, key, run, index)
+                call_index += 1
+                status, _, response, usage = complete(body, key, run, call_index)
+                if stage == "implementation" and status == 400 and provider_error_code(run, call_index) == "json_validate_failed":
+                    call_index += 1
+                    run.event("format_recovery", attempt=call_index, response_format="text", validation="local")
+                    fallback = {**body, "response_format": {"type": "text"}}
+                    status, _, response, usage = complete(fallback, key, run, call_index)
                 if status != 200:
                     raise ValueError(f"Builder {stage} returned HTTP {status}")
                 if usage["finish_reason"] != "stop":
@@ -194,16 +212,15 @@ def main():
         production = request_body(IMPLEMENT, dict(
             **inputs, editable_paths=sorted(sources), source_excerpts=evidence,
         ), args.implementation_cap, "json_object")
-        answer = respond("implementation", production, 1)
+        answer = respond("implementation", production)
         patch = build_patch(args.repo, revision, run, apply_edits(answer, sources))
         run.save("implementation-gate.json", dict(outcome="passed"))
 
         outcome = "test_preparation_failed"
-        testing = request_body(TEST, dict(
-            **inputs, patch=patch, implementation_answer=answer,
-            public_test_examples=[item for item in evidence if item["path"].startswith("tests/")],
-        ), args.testing_cap, "text")
-        tests = respond("testing", testing, 2)
+        testing = request_body(
+            TEST, testing_inputs(inputs, patch, evidence, answer, args.testing_context), args.testing_cap, "text",
+        )
+        tests = respond("testing", testing)
         compile(tests, "public-tests.py", "exec")
         run.write("public-tests.py", tests)
         outcome = "ready_for_test_runner"

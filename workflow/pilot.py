@@ -189,6 +189,32 @@ def write_test_report(run, issue, revision, outcome):
     run.write("test_report.md", "\n".join(lines))
 
 
+def record_return_route(run, outcome, issue, revision):
+    evidence = []
+    for name in ("clean-public", "candidate-public", "candidate-suite", "clean-suite"):
+        path = run.path / f"{name}.json"
+        if path.is_file():
+            evidence.append(name)
+    if outcome in ("patch_does_not_apply", "implementation_gate_failed"):
+        stage, classification = "Implementation", "build_or_patch_failure"
+    elif outcome == "candidate_suite_failed":
+        clean = json.loads((run.path / "clean-suite.json").read_text(encoding="utf-8"))
+        public = json.loads((run.path / "candidate-public.json").read_text(encoding="utf-8"))
+        if clean["exit_code"] != 0:
+            stage, classification = "Maintainer", "clean_suite_also_failed"
+        elif public["exit_code"] == 0:
+            stage, classification = "Implementation", "candidate_suite_regression"
+        else:
+            stage, classification = "Testing", "new_tests_or_candidate_behavior"
+    elif outcome in ("clean_regression_expectation_not_met", "public_test_discovery_mismatch",
+                     "candidate_public_tests_failed_or_skipped", "missing_test_counts"):
+        stage, classification = "Testing", outcome
+    else:
+        stage, classification = "Maintainer", outcome
+    run.save("return-to-stage.json", dict(issue=issue, revision=revision, target_stage=stage,
+                                         classification=classification, public_evidence=evidence))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--issue", type=int, choices=CASES, required=True)
@@ -246,6 +272,8 @@ def main():
     tested_hash = hashlib.sha256(candidate_patch.read_bytes()).hexdigest() if outcome == "passed" else None
     run.save("gate.json", dict(outcome=outcome, candidate_patch_sha256=tested_hash))
     write_test_report(run, args.issue, revision, outcome)
+    if outcome != "passed":
+        record_return_route(run, outcome, args.issue, revision)
     print(outcome)
     return 0 if outcome == "passed" else 1
 

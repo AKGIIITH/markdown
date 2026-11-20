@@ -50,6 +50,16 @@ of the distribution or the project website at <https://Python-Markdown.github.io
 
 See the change log at <https://python-markdown.github.io/changelog/>.
 
+AutoSE assignment
+-----------------
+
+This fork includes the **Issue In, Pull Request Out** workflow. Maintainers
+can apply `autose:run` or comment `/autose run` on one of the five tracked
+issues. See the [experiment ledger](experiment/README.md) for the hosted runs,
+the [assignment report](experiment/report.pdf) for the evaluation, and the
+[narrated demo](experiment/demo.mp4) for a walkthrough. The report source is
+in [Markdown](experiment/report.md).
+
 Support
 -------
 

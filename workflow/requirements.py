@@ -65,6 +65,8 @@ def main():
     inputs.add_argument("--proposal", type=Path, help="Use an existing Planner proposal.")
     inputs.add_argument("--skill", type=Path, help="Run the Planner with this A1 skill before the quality check.")
     parser.add_argument("--proposal-cap", type=int, default=1800)
+    parser.add_argument("--proposal-format", choices=("json_object", "json_schema"), default="json_schema")
+    parser.add_argument("--feedback", type=Path, help="Use public feedback from a rejected quality check.")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--parent-run", help="Identifier of the supplied proposal's originating run.")
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
@@ -82,6 +84,8 @@ def main():
         parser.error("--live requires GROQ_API_KEY in the environment")
     if args.skill and not args.live:
         parser.error("--skill requires --live to generate the proposal")
+    if args.feedback and not args.skill:
+        parser.error("--feedback requires a new Planner proposal using --skill")
     if args.proposal and not args.parent_run:
         parser.error("--proposal requires --parent-run")
 
@@ -90,8 +94,10 @@ def main():
     if args.skill:
         planner_run = Run(args.out, "requirements")
         planner_run.save("manifest.json", dict(issue=args.issue, revision=CASES[args.issue][0],
-                                               stage="requirements", budget_confirmation=args.budget_confirmation))
+                                               stage="requirements", proposal_format=args.proposal_format,
+                                               budget_confirmation=args.budget_confirmation))
         args.dry_run = False
+        args.recover_provider_format = True
         try:
             outcome = planner(args, planner_run)
         except (OSError, RuntimeError, ValueError) as exc:
