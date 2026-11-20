@@ -1,14 +1,16 @@
 """Coordinate Requirements, Design, and Builder, with offline replay support."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
 
-from .baseline import CASES, Run, git
+from .baseline import CASES, GROQ_MODELS, Run, git
 from .pilot import ROOT
 
 
@@ -39,13 +41,16 @@ def stage(run, name, argv):
     return record
 
 
-def coordinate(args, run):
+def coordinate(args, run, previous):
     shared = ["--issue", str(args.issue), "--out", str(run.path)]
     if args.issue_file:
         shared.extend(["--issue-file", str(args.issue_file.resolve())])
     if args.live:
         mode = ["--live", "--budget-confirmation", args.budget_confirmation]
-        requirements = ["--skill", str(args.skill.resolve()), "--proposal-cap", str(args.requirements_cap), *mode]
+        requirements = [
+            "--skill", str(args.skill.resolve()), "--proposal-cap", str(args.requirements_cap),
+            "--proposal-format", args.requirements_format, *mode,
+        ]
         design_mode = builder_mode = mode
     else:
         fixtures = args.fixtures.resolve()
@@ -56,33 +61,90 @@ def coordinate(args, run):
         design_mode = ["--fixture", str(fixtures / "design.json")]
         builder_mode = ["--fixture", str(fixtures / "builder.json")]
 
-    first = stage(run, "requirements", ["workflow.requirements", *shared, *requirements])
-    yield first
-    if first["exit_code"] != 0 or first["gate"] != "passed":
-        return
+    def requirements_step(_prior):
+        first = previous.get("requirements") or stage(
+            run, "requirements", ["workflow.requirements", *shared, *requirements],
+        )
+        yield first
+        if args.live and first["gate"] == "route_to_requirements" and first["artifact"]:
+            feedback = Path(first["artifact"]) / "judgment.json"
+            if feedback.is_file():
+                run.event("repair_dispatch", from_stage="requirements_quality", to_stage="requirements", attempt=1)
+                yield stage(run, "requirements", [
+                    "workflow.requirements", *shared, *requirements, "--feedback", str(feedback),
+                ])
 
-    design = stage(run, "design", [
-        "workflow.design", *shared, "--requirements-run", first["artifact"],
-        "--max-calls", str(args.design_calls), "--completion-cap", str(args.design_cap),
-        "--final-completion-cap", str(args.design_final_cap), *design_mode,
-    ])
-    yield design
-    if design["exit_code"] != 0 or design["gate"] != "passed":
-        return
+    def design_step(prior):
+        yield previous.get("design") or stage(run, "design", [
+            "workflow.design", *shared, "--requirements-run", prior["artifact"],
+            "--max-calls", str(args.design_calls), "--completion-cap", str(args.design_cap),
+            "--final-completion-cap", str(args.design_final_cap), *design_mode,
+        ])
 
-    builder = stage(run, "builder", [
-        "workflow.builder", *shared, "--design-run", design["artifact"],
-        "--implementation-cap", str(args.implementation_cap), "--testing-cap", str(args.testing_cap),
-        *builder_mode,
-    ])
-    yield builder
-    if builder["exit_code"] != 0 or builder["gate"] != "ready_for_test_runner" or args.live:
-        return
+    def builder_step(prior):
+        sdk = ["--sdk-calls", str(args.builder_sdk_calls)] if args.builder_sdk_calls else []
+        yield previous.get("builder") or stage(run, "builder", [
+            "workflow.builder", *shared, "--design-run", prior["artifact"],
+            "--implementation-cap", str(args.implementation_cap), "--testing-cap", str(args.testing_cap),
+            "--testing-context", args.testing_context, *sdk, *builder_mode,
+        ])
 
-    yield stage(run, "testing", [
-        "workflow.pilot", "--issue", str(args.issue), "check",
-        "--out", str(run.path), "--builder-run", builder["artifact"],
-    ])
+    def testing_step(prior):
+        yield stage(run, "testing", [
+            "workflow.pilot", "--issue", str(args.issue), "check",
+            "--out", str(run.path), "--builder-run", prior["artifact"],
+        ])
+
+    steps = [("requirements", requirements_step, "passed"), ("design", design_step, "passed"),
+             ("builder", builder_step, "ready_for_test_runner")]
+    if not args.live:
+        steps.append(("testing", testing_step, "passed"))
+    if args.builder_sdk_calls:
+        from .sdk_builder import run_stage_graph
+
+        yield from run_stage_graph(steps)
+        return
+    prior = None
+    for _name, step, expected_gate in steps:
+        for prior in step(prior):
+            yield prior
+        if prior["exit_code"] != 0 or prior["gate"] != expected_gate:
+            break
+
+
+def resumed_stages(parent, issue, revision, issue_digest, mode):
+    manifest = read_json(parent / "manifest.json")
+    if (
+        manifest["issue"], manifest["revision"], manifest.get("issue_sha256"), manifest["mode"]
+    ) != (issue, revision, issue_digest, mode):
+        raise ValueError("Parent run has a different issue, revision, issue snapshot or mode")
+    latest = {record["stage"]: record for record in read_json(parent / "stages.json")}
+    reusable = {}
+    for name, outcome in (("requirements", "passed"), ("design", "passed"), ("builder", "ready_for_test_runner")):
+        row = latest.get(name)
+        if not row or row["exit_code"] != 0 or row["gate"] != outcome or not row["artifact"]:
+            break
+        path = Path(row["artifact"]).resolve()
+        if not path.is_relative_to(parent.resolve()) or read_json(path / "gate.json")["outcome"] != outcome:
+            raise ValueError(f"Invalid or nonlocal {name} handoff in parent run")
+        reusable[name] = {**row, "reused": True}
+    return reusable
+
+
+def copy_reused_handoffs(run, previous):
+    handoffs = {
+        "requirements": ("accepted-requirements.json", "judgment.json"),
+        "design": ("design.md", "design-evidence.json", "requirements.json"),
+        "builder": ("diff.patch", "public-tests.py"),
+    }
+    for name, row in previous.items():
+        origin = Path(row["artifact"])
+        destination = run.path / origin.name
+        destination.mkdir()
+        for file in ("manifest.json", "gate.json", *handoffs[name]):
+            shutil.copyfile(origin / file, destination / file)
+        row["reused_from"] = str(origin)
+        row["artifact"] = str(destination)
 
 
 def summarize_usage(run):
@@ -113,7 +175,12 @@ def main():
     mode.add_argument("--live", action="store_true")
     parser.add_argument("--skill", type=Path)
     parser.add_argument("--requirements-cap", type=int, default=1800)
+    parser.add_argument("--model", choices=GROQ_MODELS, default=GROQ_MODELS[0])
+    parser.add_argument("--requirements-format", choices=("json_object", "json_schema"), default="json_schema")
+    parser.add_argument("--testing-context", choices=("patch_only", "retained"), default="patch_only")
+    parser.add_argument("--builder-sdk-calls", type=int, help="Enable the LangGraph Builder with an explicit task call limit.")
     parser.add_argument("--issue-file", type=Path)
+    parser.add_argument("--resume-from", type=Path, help="Reuse passed handoffs from one previous controller run.")
     parser.add_argument("--budget-confirmation")
     args = parser.parse_args()
     if args.live and not (args.skill and (args.budget_confirmation or "").strip() and os.getenv("GROQ_API_KEY")):
@@ -121,17 +188,36 @@ def main():
     if args.design_calls < 3 or min(args.requirements_cap, args.design_cap, args.design_final_cap,
                                     args.implementation_cap, args.testing_cap) < 1:
         parser.error("Design needs at least three calls and all completion caps must be positive")
+    if args.builder_sdk_calls is not None and args.builder_sdk_calls < 1:
+        parser.error("The Builder SDK call limit must be positive")
 
     os.umask(0o077)
+    revision, _, issue_name = CASES[args.issue]
+    issue_path = args.issue_file or ROOT / "experiment/issues" / issue_name
+    try:
+        issue_digest = hashlib.sha256(issue_path.read_bytes()).hexdigest()
+        mode = "live" if args.live else "fixture"
+        previous = resumed_stages(args.resume_from.resolve(), args.issue, revision, issue_digest, mode) if args.resume_from else {}
+        if "builder" in previous:
+            parent = read_json(args.resume_from / "manifest.json")
+            if parent.get("builder_sdk_calls") != args.builder_sdk_calls:
+                previous.pop("builder")
+    except (OSError, ValueError, KeyError) as exc:
+        parser.error(str(exc))
     run = Run(args.out.resolve(), "controller")
+    copy_reused_handoffs(run, previous)
     if args.live:
+        os.environ["AUTOSE_GROQ_MODEL"] = args.model
         os.environ["AUTOSE_RATE_STATE"] = str(run.path / "provider-rate-state.json")
     run.save("manifest.json", dict(
-        issue=args.issue, revision=CASES[args.issue][0], mode="live" if args.live else "fixture",
+        issue=args.issue, revision=revision, mode=mode, issue_sha256=issue_digest,
+        parent_run=str(args.resume_from.resolve()) if args.resume_from else None,
         harness_commit=git(ROOT, "rev-parse", "HEAD").decode().strip(),
+        requirements_format=args.requirements_format, testing_context=args.testing_context,
+        builder_sdk_calls=args.builder_sdk_calls, model=args.model if args.live else None,
     ))
     records = []
-    for record in coordinate(args, run):
+    for record in coordinate(args, run, previous):
         records.append(record)
         run.save("stages.json", records)
     summarize_usage(run)

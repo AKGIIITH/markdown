@@ -101,3 +101,22 @@ def complete(body, key, run, attempt):
         raise ValueError("Groq returned no text completion")
     run.write(f"attempt-{attempt}-completion.txt", content)
     return status, meta, content, usage
+
+
+def provider_error_code(run, attempt):
+    path = run.path / f"attempt-{attempt}-error.txt"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("error", {}).get("code")
+    except (ValueError, AttributeError):
+        return None
+
+
+def parse_json_answer(text):
+    value = text.strip()
+    if value.startswith("```") and value.endswith("```"):
+        opener, _, body = value.partition("\n")
+        if opener.strip().casefold() in ("```", "```json"):
+            value = body.removesuffix("```").strip()
+    return json.loads(value)
