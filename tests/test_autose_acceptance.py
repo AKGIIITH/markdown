@@ -13,7 +13,7 @@ class TestTableClassOption(unittest.TestCase):
         return markdown.markdown(text, extensions=extensions)
 
     def _extract_tables(self, html):
-        """Return a list of (full_tag, class_attr) tuples for each <table> element.
+        """Return the opening tag and class attribute for each table.
         The class attribute is the raw string or None.
         """
         pattern = re.compile(r'<table(?P<attrs>[^>]*)>', re.IGNORECASE)
