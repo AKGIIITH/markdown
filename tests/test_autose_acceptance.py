@@ -3,6 +3,7 @@ import re
 import markdown
 from markdown.extensions.tables import TableExtension
 
+
 class TestTableClassOption(unittest.TestCase):
     def _render(self, text, **ext_kwargs):
         """Render markdown text with the tables extension.
@@ -13,7 +14,7 @@ class TestTableClassOption(unittest.TestCase):
 
     def _extract_tables(self, html):
         """Return a list of (full_tag, class_attr) tuples for each <table> element.
-        class_attr is the raw string or None.
+        The class attribute is the raw string or None.
         """
         pattern = re.compile(r'<table(?P<attrs>[^>]*)>', re.IGNORECASE)
         tables = []
@@ -95,6 +96,7 @@ class TestTableClassOption(unittest.TestCase):
         self.assertIn('b', html)
         self.assertIn('B1', html)
         self.assertIn('d', html)
+
 
 if __name__ == '__main__':
     unittest.main()
