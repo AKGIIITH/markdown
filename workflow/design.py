@@ -32,7 +32,8 @@ file and the public test example. Explain what the test example demonstrates.
 Name existing repository paths and symbols for implementation edits. Distinguish
 new symbols and new files from existing ones. Keep the handoff concise.
 When proposing a configuration change, verify how the existing API interprets
-the proposed default and value types. Under Public tests, map each criterion
+the proposed default and value types. In this repository, a None or bool default
+causes Extension.setConfig to parse the supplied value as a boolean. Under Public tests, map each criterion
 number to its input and observable assertion using an AC-labelled list or a
 numbered table. Aim for 450 words or fewer. Start with the first required
 heading and provide the handoff directly. Do not change the accepted criteria

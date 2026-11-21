@@ -151,7 +151,7 @@ def changelog_patch(repo, revision, issue, title):
 
 def test_stage(args, run, revision):
     patch = args.patch.read_bytes()
-    tests = args.tests.read_bytes()
+    tests = args.tests.read_bytes().rstrip(b"\r\n") + b"\n"
     run.write("production.diff.patch", patch.decode("utf-8"))
     run.write("public-tests.py", tests.decode("utf-8"))
     if args.release_note:
@@ -271,6 +271,11 @@ def record_return_route(run, outcome, issue, revision):
         public = json.loads((run.path / "candidate-public.json").read_text(encoding="utf-8"))
         if clean["exit_code"] != 0:
             stage, classification = "Maintainer", "clean_suite_also_failed"
+        elif ("ValueError: Cannot parse bool value:" in
+              (run.path / "candidate-public.stderr.log").read_text(encoding="utf-8")
+              and "ValueError: Cannot parse bool value:" not in
+              (run.path / "clean-public.stderr.log").read_text(encoding="utf-8")):
+            stage, classification = "Implementation", "candidate_configuration_type_error"
         elif public["exit_code"] == 0:
             stage, classification = "Implementation", "candidate_suite_regression"
         else:

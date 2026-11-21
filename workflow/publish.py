@@ -162,10 +162,16 @@ def prepare_rereview(args, run, client):
             raise ValueError("Round 2 requires changes on the PR after an authenticated round 1 request")
         round_number = 2
     else:
-        # Only an authorized maintainer can request recovery on a published candidate.
-        # The first review must be on the original candidate head encoded by Release.
-        if branch != f"autose/issue-{issue}-{record['head_sha'][:12]}":
-            raise ValueError("First review requires the original published candidate head")
+        # CI fixes can follow publication. Require the original Release commit
+        # on this branch and verify its pinned parent before reviewing a descendant.
+        original = branch.rsplit("-", 1)[1]
+        if not record["head_sha"].startswith(original):
+            anchor = client.request(f"{API}/commits/{original}")
+            if [p["sha"] for p in anchor["parents"]] != [revision]:
+                raise ValueError("Candidate branch does not identify a commit on the pinned revision")
+            comparison = client.request(f"{API}/compare/{anchor['sha']}...{record['head_sha']}")
+            if comparison["status"] != "ahead":
+                raise ValueError("Repaired candidate does not descend from its published commit")
         round_number = 1
     verify_pr(client.request(endpoint), record)
     run.save("pr.json", record)
