@@ -11,7 +11,7 @@ from .baseline import MODEL, Run, git
 from .design import Source, TOOLS, save_usage
 from .github import API, GitHub
 from .model import chat
-from .pilot import CASES_BY_BASE, ROOT, execute, export
+from .pilot import CASES_BY_BASE, ROOT, execute, export, sandbox_command
 from .publish import read_json, verify_pr
 from .trigger import FORK
 
@@ -27,7 +27,10 @@ Markdown review. The first line must be 'Verdict: APPROVE' or
 'Verdict: REQUEST_CHANGES'. For changes, the second line must be
 'Route: Design', 'Route: Implementation' or 'Route: Testing'. Explain the most
 important findings, with file and line references where possible. Ground any
-claim about executed tests in your inspection results. Leave merge to a human."""
+claim about executed tests in your inspection results. Cite concrete lines for
+a blocking finding and read the affected implementation before concluding that
+a value is never passed or used. An unavailable tool provides no result about
+the candidate's behavior. Leave merge to a human."""
 
 
 def no_args_tool(name, description):
@@ -43,6 +46,10 @@ REVIEW_TOOLS = [*TOOLS, no_args_tool("run_public_suite", "Run the public unittes
 
 def parse_review(text):
     lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    for index, line in enumerate(lines[:2]):
+        labelled = re.fullmatch(r"\*\*(Verdict|Route):\*\*[ \t]+(.+)", line)
+        if labelled:
+            lines[index] = f"{labelled[1]}: {labelled[2]}"
     verdict = lines[0].removeprefix("Verdict: ") if lines and lines[0].startswith("Verdict: ") else ""
     if verdict == "APPROVE" and len(lines) >= 2:
         return dict(verdict=verdict, route=None, MERGE_READINESS_CHECK="READY_FOR_HUMAN")
@@ -73,14 +80,7 @@ def tool_result(source, run, function, index, check_image):
         if not checkout.exists():
             export(source.repo, source.revision, checkout)
             home.mkdir()
-        cmd = [
-            "docker", "run", "--rm", "--network", "none", "--read-only",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            "--user", f"{os.getuid()}:{os.getgid()}", "--tmpfs", "/tmp",
-            "--mount", f"type=bind,src={checkout},dst=/checkout,readonly",
-            "--workdir", "/checkout", "--env", "PYTHONDONTWRITEBYTECODE=1",
-            check_image, "python", "-m", "unittest", "discover", "tests", "-v",
-        ]
+        cmd = sandbox_command(checkout, check_image, ["python", "-m", "unittest", "discover", "tests", "-v"])
         label = f"review-check-{index}"
         result = execute(run, label, cmd, checkout, home)
         log = (run.path / f"{label}.stderr.log").read_text(encoding="utf-8")
@@ -92,6 +92,13 @@ def review(inputs, source, run, respond, lookups, lookup_cap, completion_cap, ch
     messages = [{"role": "system", "content": INSPECT},
                 {"role": "user", "content": json.dumps(inputs, ensure_ascii=False)}]
     evidence = []
+    if check_image:
+        evidence.append(tool_result(source, run, {
+            "name": "run_public_suite", "arguments": "{}",
+        }, 0, check_image))
+        messages[0]["content"] += (
+            " The public suite was run independently. Spend your tool calls on source inspection."
+        )
     index = 0
     for index in range(1, lookups + 1):
         body = dict(model=MODEL, temperature=0, max_completion_tokens=lookup_cap, messages=messages,
@@ -107,10 +114,10 @@ def review(inputs, source, run, respond, lookups, lookup_cap, completion_cap, ch
         if result.get("inspection_finished"):
             break
         evidence.append(result)
-        messages.extend([
+        messages[2:] = [
             {"role": "assistant", "content": (message or {}).get("content"), "tool_calls": calls},
             {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, ensure_ascii=False)},
-        ])
+        ]
     body = dict(model=MODEL, temperature=0, max_completion_tokens=completion_cap, messages=[
         {"role": "system", "content": WRITE},
         {"role": "user", "content": json.dumps({**inputs, "inspection": evidence}, ensure_ascii=False)},
@@ -181,6 +188,7 @@ def main():
     run = Run(args.out.resolve(), "review")
     if args.live:
         os.environ["AUTOSE_RATE_STATE"] = str(run.path / "provider-rate-state.json")
+        os.environ["AUTOSE_MAX_PROVIDER_CALLS"] = "8"
     run.save("manifest.json", dict(issue=args.issue, round=args.round, mode="live" if args.live else "fixture",
                                   parent_run=str(args.ci_run.resolve()), budget_confirmation=args.budget_confirmation))
     try:
@@ -208,6 +216,7 @@ def main():
         outcome = "review_ready"
     except (IndexError, KeyError, OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError) as exc:
         run.save("error.json", dict(type=type(exc).__name__, message=str(exc)))
+        run.write("review.md", f"# Review gate failed\n\n{type(exc).__name__}: {exc}\n")
         outcome = "review_failed"
     finally:
         save_usage(run)

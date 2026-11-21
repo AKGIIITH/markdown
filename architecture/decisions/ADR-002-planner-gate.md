@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted for the baseline design. The early pilot implemented structural
-validation. The requirements-quality check described below is planned.
+Superseded by ADR-003 for the autonomous requirements-quality check. This
+record preserves the original baseline decision and early pilot. The
+provider and structural checks still apply.
 
 ## Context
 

@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,7 +17,7 @@ from .release import git_run
 from .trigger import FORK
 
 
-APP_INPUTS = ("markdown", "tests", "docs", "pyproject.toml", "tox.ini", "uv.lock",
+APP_INPUTS = ("markdown", "tests", "docs", "pyproject.toml", "tox.ini", "uv.lock", ".pyspelling.yml", ".spell-dict",
               ".github/workflows/tox.yml", ".github/workflows/changelog-enforcer.yml")
 EXPECTED_CI_JOBS = {
     "test": ("py311", "py312", "py313", "py314", "py315", "pypy311", "pygments"),
@@ -125,6 +126,47 @@ def publish(args, run, client):
     return "published"
 
 
+def prepare_rereview(args, run, client):
+    endpoint = f"{API}/pulls/{args.pr}"
+    pr = client.request(endpoint)
+    branch = pr["head"]["ref"]
+    match = re.fullmatch(r"autose/issue-([1-5])-[a-f0-9]{12}", branch)
+    if not match:
+        raise ValueError("Review round 2 requires a published AutoSE PR")
+    issue = int(match[1])
+    base, revision = CASES_BY_BASE[issue]
+    record = dict(issue=issue, fork=FORK, number=args.pr, url=pr["html_url"],
+                  head_sha=pr["head"]["sha"], branch=branch, base=base, base_sha=pr["base"]["sha"])
+    verify_pr(pr, record)
+    git_run(args.repo, "merge-base", "--is-ancestor", revision, record["base_sha"])
+    if git(args.repo, "diff", "--name-only", revision, record["base_sha"], "--", *APP_INPUTS):
+        raise ValueError("Application or CI inputs on the release base differ from the tested baseline")
+
+    reviewer = client.request("/user")["login"]
+    reviews = []
+    for page in range(1, 11):
+        rows = client.request(f"{endpoint}/reviews?per_page=100&page={page}")
+        reviews.extend(row for row in rows if row["user"]["login"] == reviewer)
+        if len(rows) < 100:
+            break
+    else:
+        raise ValueError("Could not verify prior review rounds")
+    markers = {round_number: f"<!-- autose-review:{issue}:round-{round_number} -->"
+               for round_number in (1, 2)}
+    prior = [row for row in reviews if (row.get("body") or "").endswith(markers[1])]
+    if (len(prior) != 1 or prior[0]["state"] != "CHANGES_REQUESTED"
+            or prior[0]["commit_id"] == record["head_sha"]):
+        raise ValueError("Round 2 requires changes on the PR after an authenticated round 1 request")
+    if any((row.get("body") or "").endswith(markers[2]) for row in reviews):
+        raise ValueError("The second review round has already been used")
+    verify_pr(client.request(endpoint), record)
+    run.save("pr.json", record)
+    run.write("pr.md", f"# Review round 2\n\n[PR #{args.pr}]({record['url']})\n\n"
+              f"Recheck CI on the current head `{record['head_sha']}`.\n")
+    print(f"issue={issue}")
+    return "published"
+
+
 def successful_matrix(jobs):
     completed = set()
     for job in jobs:
@@ -173,7 +215,9 @@ def ci_snapshot(record, client):
             if any(check["conclusion"] in ("failure", "cancelled", "timed_out", "action_required")
                    for check in checks.values()):
                 return "ci_failed", evidence
-            if all(check["status"] == "completed" for check in checks.values()):
+            changelog_ok = any(check["name"] == "check-for-entry" and check["conclusion"] == "success"
+                               for check in checks.values())
+            if changelog_ok and all(check["status"] == "completed" for check in checks.values()):
                 return "passed", evidence
     return "ci_pending", evidence
 
@@ -205,11 +249,13 @@ def verify_ci(args, run, client):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--issue", type=int, choices=CASES_BY_BASE, required=True)
+    parser.add_argument("--issue", type=int, choices=CASES_BY_BASE)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--repo", type=Path, default=ROOT)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("open").add_argument("--preflight", type=Path, required=True)
+    rereview = commands.add_parser("rereview")
+    rereview.add_argument("--pr", type=int, required=True)
     ci = commands.add_parser("ci")
     ci.add_argument("--publication", type=Path, required=True)
     ci.add_argument("--timeout", type=int, default=600)
@@ -217,18 +263,25 @@ def main():
     token = os.getenv("AUTOSE_GITHUB_TOKEN")
     if not token:
         parser.error("AUTOSE_GITHUB_TOKEN is required")
+    if args.command != "rereview" and args.issue is None:
+        parser.error("--issue is required for publication and CI verification")
+    if args.command == "rereview" and args.pr < 1:
+        parser.error("--pr must be positive")
     if args.command == "ci" and args.timeout < 0:
         parser.error("CI timeout cannot be negative")
     os.umask(0o077)
-    run = Run(args.out.resolve(), "publication" if args.command == "open" else "ci-verification")
+    run = Run(args.out.resolve(), "ci-verification" if args.command == "ci" else "publication")
     run.secret = token
     run.save("manifest.json", dict(issue=args.issue, fork=FORK, mode=args.command))
     try:
         client = GitHub(token)
-        outcome = publish(args, run, client) if args.command == "open" else verify_ci(args, run, client)
+        handlers = {"open": publish, "ci": verify_ci, "rereview": prepare_rereview}
+        outcome = handlers[args.command](args, run, client)
     except (OSError, KeyError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         run.save("error.json", dict(type=type(exc).__name__, message=str(exc)))
-        outcome = "publication_failed" if args.command == "open" else "ci_verification_failed"
+        if not (run.path / "pr.md").exists():
+            run.write("pr.md", f"# Release gate failed\n\n{type(exc).__name__}: {exc}\n")
+        outcome = "ci_verification_failed" if args.command == "ci" else "publication_failed"
     run.save("gate.json", dict(outcome=outcome))
     print(outcome)
     return 0 if outcome in ("published", "passed") else 1

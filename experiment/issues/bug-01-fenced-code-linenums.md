@@ -9,7 +9,11 @@ the browser. A Python code block renders correctly until I add the
 Enable `fenced_code` and `attr_list`, leave `codehilite` disabled, and
 convert this Markdown:
 
+~~~~markdown
+```{.python linenums}
 print(1)
+```
+~~~~
 
 ## What I observed
 

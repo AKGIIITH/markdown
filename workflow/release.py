@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 from .baseline import Run, git
-from .pilot import CASES_BY_BASE, ROOT
+from .pilot import CASES_BY_BASE, CHANGELOG, ROOT
 from .trigger import FORK
 
 
@@ -45,9 +45,11 @@ def prepare_candidate(repo, revision, patch, issue, out):
         for status, path in zip(changes[::2], changes[1::2]):
             if status == "A" and path == "tests/test_autose_acceptance.py":
                 continue
+            if status == "M" and path == CHANGELOG:
+                continue
             if status != "M" or not path.startswith("markdown/") or not path.endswith(".py"):
                 raise ValueError(f"Candidate changes an unauthorized release path: {path}")
-        modes = git(checkout, "ls-files", "--stage", "-z", "--", "markdown", "tests/test_autose_acceptance.py")
+        modes = git(checkout, "ls-files", "--stage", "-z", "--", "markdown", "tests/test_autose_acceptance.py", CHANGELOG)
         if any(entry and not entry.startswith(b"100644 ") for entry in modes.split(b"\0")):
             raise ValueError("Release paths must be ordinary non-executable files")
         tree = git(checkout, "write-tree").decode().strip()
