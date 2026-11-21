@@ -320,6 +320,17 @@ def plan(inputs, source, run, respond, max_calls, completion_cap, final_completi
     )
     if MODEL.startswith("openai/gpt-oss-"):
         body["reasoning_effort"] = "low"
+    headings = ("Source evidence", "Implementation plan", "Public tests")
+    if starting_points:
+        schema = {"type": "object", "properties": {name: {"type": "string"} for name in headings},
+                  "required": list(headings), "additionalProperties": False}
+        body["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": "design_handoff", "strict": True, "schema": schema}}
+        body["messages"][0]["content"] += (
+            "\nReturn JSON with these exact keys: Source evidence, Implementation plan, Public tests. "
+            "Write the section bodies as strings without headings. Include the inspected path and function "
+            "in Implementation plan. In Public tests use one line per criterion: - AC 1: input and assertion."
+        )
     for retry in range(2):
         call = index + retry
         run.event("design_writing", call=call, inspected_files=sorted(source.reads))
@@ -339,7 +350,21 @@ def plan(inputs, source, run, respond, max_calls, completion_cap, final_completi
             continue
         if reason != "stop" or message.get("tool_calls"):
             raise ValueError(f"Incomplete text-only design (finish reason {reason!r})")
-        validate_design(text, len(inputs["requirements"]["criteria"]), source.reads, excerpts)
+        try:
+            if starting_points:
+                sections = json.loads(text or "")
+                if not isinstance(sections, dict) or any(
+                    not isinstance(sections.get(name), str) or not sections[name].strip() for name in headings
+                ):
+                    raise ValueError("Design requires three nonempty section bodies")
+                text = "\n\n".join(f"## {name}\n{sections[name]}" for name in headings)
+            validate_design(text, len(inputs["requirements"]["criteria"]), source.reads, excerpts)
+        except ValueError as exc:
+            if retry:
+                raise
+            run.event("design_validation_retry", reason=str(exc))
+            body["messages"][0]["content"] += f"\nCorrect this validation failure: {exc}"
+            continue
         return text
 
 
