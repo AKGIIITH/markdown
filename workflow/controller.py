@@ -160,10 +160,20 @@ def resumed_stages(parent, issue, revision, issue_digest, mode):
         row = latest.get(name)
         if not row or row["exit_code"] != 0 or row["gate"] != outcome or not row["artifact"]:
             break
-        path = Path(row["artifact"]).resolve()
-        if not path.is_relative_to(parent.resolve()) or read_json(path / "gate.json")["outcome"] != outcome:
+        # GitHub artifacts retain paths from the previous runner. Resolve only
+        # the recorded stage directory inside this controller's evidence.
+        recorded = Path(row["artifact"])
+        if recorded.parent.name != parent.name or recorded.name in ("", ".", ".."):
+            raise ValueError(f"Invalid {name} handoff path in parent run")
+        path = (parent / recorded.name).resolve()
+        if path.parent != parent.resolve() or read_json(path / "gate.json")["outcome"] != outcome:
             raise ValueError(f"Invalid or nonlocal {name} handoff in parent run")
-        reusable[name] = {**row, "reused": True}
+        receipt = read_json(path / "manifest.json")
+        if (receipt.get("issue"), receipt.get("revision")) != (issue, revision):
+            raise ValueError(f"Wrong issue or application revision in {name} receipt")
+        if name == "builder" and not (path / "public-tests.py").is_file():
+            break
+        reusable[name] = {**row, "artifact": str(path), "reused": True}
     return reusable
 
 
