@@ -50,8 +50,8 @@ of the distribution or the project website at <https://Python-Markdown.github.io
 
 See the change log at <https://python-markdown.github.io/changelog/>.
 
-AutoSE assignment
------------------
+Assignment workflow
+-------------------
 
 This [fork](https://github.com/AKGIIITH/markdown) uses application commit
 `2c96e36ba4750cf18583d62e2fcecff49e077419`. Issue 2 uses the seeded
@@ -71,8 +71,7 @@ The script comments `/autose run`, watches each Actions run, and reads the PR
 and review links from that run's artifacts. The `autose:run` label is also
 supported. Allow a minute between model calls. The recording can cut the
 waiting time and show the issue, gate artifacts, CI, independent review and
-open PR. The existing [video](experiment/demo.mp4) is a narrated walkthrough
-of recorded evidence.
+open PR. The existing [video](experiment/demo.mp4) shows the recorded evidence with narration.
 
 ### Repository setup
 
@@ -99,10 +98,11 @@ question through `LangGraph` and writes the patch and public tests. The
 Reviewer starts with the issue, exact PR diff and source. Release is scripted.
 
 The [timing and token ledger](results/runs.md) records **372,520 reported
-tokens** in the enumerated batches. Provider errors and untracked exploratory
-calls can leave usage unknown. The new local replays used zero model tokens.
+tokens** in the enumerated batches. Provider errors and exploratory calls
+without records can leave usage unknown. The new local replays used zero model
+tokens.
 The [report](report.pdf) and [experiment ledger](experiment/README.md)
-distinguish recorded hosted runs, guided PRs, and local replay.
+distinguish recorded hosted runs, guided pull requests, and local replay.
 
 `Codex` helped implement the harness and gates, analyze provider and CI logs,
 write the report and demo instructions, and mechanically apply or repair
