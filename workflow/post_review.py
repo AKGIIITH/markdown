@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .baseline import Run
 from .github import API, GitHub
-from .publish import read_json, verify_pr
+from .publish import read_json, requests_changes, review_identity, verify_pr
 from .review import parse_review
 from .trigger import FORK
 
@@ -33,13 +33,13 @@ def post(review_dir, client, run):
     number = int(record["number"])
     endpoint = f"{API}/pulls/{number}"
     verify_pr(client.request(endpoint), record)
-    reviewer = client.request("/user")["login"]
+    reviewer = review_identity(client)
     marker = f"<!-- autose-review:{record['issue']}:round-{round_number} -->"
     submitted = []
     for page in range(1, 11):
         rows = client.request(f"{endpoint}/reviews?per_page=100&page={page}")
         submitted.extend(row for row in rows if row["user"]["login"] == reviewer
-                         and row["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"))
+                         and row["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED", "COMMENTED"))
         if len(rows) < 100:
             break
     else:
@@ -53,12 +53,14 @@ def post(review_dir, client, run):
         if round_number == 2:
             first = f"<!-- autose-review:{record['issue']}:round-1 -->"
             prior = [row for row in submitted if (row.get("body") or "").endswith(first)]
-            if len(prior) != 1 or prior[0]["state"] != "CHANGES_REQUESTED" or prior[0]["commit_id"] == record["head_sha"]:
+            if len(prior) != 1 or not requests_changes(prior[0]) or prior[0]["commit_id"] == record["head_sha"]:
                 raise ValueError("Round 2 requires a changed head after a round 1 change request")
         verify_pr(client.request(endpoint), record)
+        actions_review = os.getenv("AUTOSE_ACTIONS_REVIEW") == "true"
+        prefix = f"AutoSE independent verdict: {verdict['verdict']}\n\n" if actions_review else ""
         posted = client.request(endpoint + "/reviews", dict(
-            commit_id=record["head_sha"], event=verdict["verdict"],
-            body=f"{text.rstrip()}\n\n{marker}",
+            commit_id=record["head_sha"], event="COMMENT" if actions_review else verdict["verdict"],
+            body=f"{prefix}{text.rstrip()}\n\n{marker}",
         ))
     if posted["commit_id"] != record["head_sha"]:
         raise ValueError("GitHub posted the review on an unexpected commit")

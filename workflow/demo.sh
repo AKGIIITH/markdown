@@ -107,7 +107,7 @@ for flag in AUTOSE_ENABLE_PUBLISH AUTOSE_ENABLE_REVIEW; do
 done
 if secret_names=$(gh api --paginate "repos/$repo/actions/secrets?per_page=100" --jq '.secrets[].name'); then
     missing=()
-    for name in GROQ_API_KEY AUTOSE_RELEASE_TOKEN AUTOSE_REVIEW_POST_TOKEN; do
+    for name in GROQ_API_KEY AUTOSE_RELEASE_TOKEN; do
         if ! grep -Fxq "$name" <<< "$secret_names"; then
             missing+=("$name")
         fi

@@ -77,9 +77,11 @@ open PR. The existing [video](experiment/demo.mp4) shows the recorded evidence w
 
 - Deploy the workflow and harness through a maintainer PR to protected `main`.
   Keep the pinned application and its CI inputs intact on the experiment bases.
-- Set `GROQ_API_KEY`, `AUTOSE_RELEASE_TOKEN` and
-  `AUTOSE_REVIEW_POST_TOKEN` as GitHub Actions secrets. The release identity
-  needs branch and PR write access. Use a separate identity for posting reviews.
+- Set `GROQ_API_KEY` and `AUTOSE_RELEASE_TOKEN` as repository Actions secrets.
+  The release token needs Contents and Pull requests write access to this fork.
+  The independent reviewer job has read access. A separate posting job uses
+  GitHub's temporary workflow token to publish the verdict as a commented
+  review on the verified commit. Formal approval and merge stay with a human.
 - Set `AUTOSE_PROVIDER_BUDGET` to the recorded provider budget and enable
   `AUTOSE_ENABLE_PUBLISH` and `AUTOSE_ENABLE_REVIEW` with the value `true`.
   Use a free provider account or configure a provider-side spending cap.

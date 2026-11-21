@@ -142,6 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       review_issue: ${{ steps.rereview.outputs.issue }}
       review_round: ${{ steps.rereview.outputs.round }}
@@ -175,7 +176,8 @@ jobs:
         id: rereview
         if: needs.authorize.outputs.review_pr != ''
         env:
-          AUTOSE_GITHUB_TOKEN: ${{ secrets.AUTOSE_REVIEW_POST_TOKEN }}
+          AUTOSE_GITHUB_TOKEN: ${{ github.token }}
+          AUTOSE_ACTIONS_REVIEW: "true"
           PR: ${{ needs.authorize.outputs.review_pr }}
         run: |
           set -o pipefail
@@ -292,6 +294,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
     concurrency:
       group: autose-review-post-${{ needs.authorize.outputs.review_pr || needs.authorize.outputs.issue }}
       cancel-in-progress: false
@@ -308,7 +311,8 @@ jobs:
           path: ${{ runner.temp }}/autose-review-post-input
       - name: Post the live findings on the current head
         env:
-          AUTOSE_REVIEW_POST_TOKEN: ${{ secrets.AUTOSE_REVIEW_POST_TOKEN }}
+          AUTOSE_REVIEW_POST_TOKEN: ${{ github.token }}
+          AUTOSE_ACTIONS_REVIEW: "true"
         run: |
           python -m workflow.post_review --review-run "$RUNNER_TEMP/autose-review-post-input" \
             --out "$RUNNER_TEMP/autose-posted-review"

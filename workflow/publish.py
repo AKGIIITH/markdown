@@ -126,6 +126,18 @@ def publish(args, run, client):
     return "published"
 
 
+def review_identity(client):
+    if os.getenv("AUTOSE_ACTIONS_REVIEW") == "true":
+        return "github-actions[bot]"
+    return client.request("/user")["login"]
+
+
+def requests_changes(review):
+    if review["state"] == "COMMENTED":
+        return (review.get("body") or "").startswith("AutoSE independent verdict: REQUEST_CHANGES\n")
+    return review["state"] == "CHANGES_REQUESTED"
+
+
 def prepare_rereview(args, run, client):
     endpoint = f"{API}/pulls/{args.pr}"
     pr = client.request(endpoint)
@@ -142,7 +154,7 @@ def prepare_rereview(args, run, client):
     if git(args.repo, "diff", "--name-only", revision, record["base_sha"], "--", *APP_INPUTS):
         raise ValueError("Application or CI inputs on the release base differ from the tested baseline")
 
-    reviewer = client.request("/user")["login"]
+    reviewer = review_identity(client)
     reviews = []
     for page in range(1, 11):
         rows = client.request(f"{endpoint}/reviews?per_page=100&page={page}")
@@ -157,7 +169,7 @@ def prepare_rereview(args, run, client):
     if any((row.get("body") or "").endswith(markers[2]) for row in reviews):
         raise ValueError("The second review round has already been used")
     if prior:
-        if (len(prior) != 1 or prior[0]["state"] != "CHANGES_REQUESTED"
+        if (len(prior) != 1 or not requests_changes(prior[0])
                 or prior[0]["commit_id"] == record["head_sha"]):
             raise ValueError("Round 2 requires changes on the PR after an authenticated round 1 request")
         round_number = 2
