@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import textwrap
 
 from .baseline import CASES, MODEL, Run, git, validate
 from .design import Source, save_usage
@@ -121,6 +122,16 @@ def apply_edits(response, sources):
         path, old, new = (edit[key] for key in ("path", "old", "new"))
         if not all(isinstance(value, str) for value in (path, old, new)) or path not in sources:
             raise ValueError("Edit contains a field of the wrong type or an unapproved path")
+        if old and old not in changed[path] and "\n" in old:
+            # Models sometimes quote a whole block relative to its enclosing scope.
+            # Accept only a unique match after restoring one common indentation.
+            first = old.splitlines()[0]
+            prefixes = {line[:len(line) - len(first)] for line in changed[path].splitlines()
+                        if first and line.endswith(first) and line[:len(line) - len(first)].isspace()}
+            matches = [(textwrap.indent(old, prefix), textwrap.indent(new, prefix))
+                       for prefix in prefixes if textwrap.indent(old, prefix) in changed[path]]
+            if len(matches) == 1:
+                old, new = matches[0]
         if not old or changed[path].count(old) != 1 or old == new:
             raise ValueError(f"Edit must replace one unique occurrence in {path}")
         changed[path] = changed[path].replace(old, new, 1)
@@ -263,6 +274,20 @@ def main():
                 return reply["message"], reply["finish_reason"]
             call_index += 1
             status, _, reply, usage = chat(body, key, run, call_index)
+            if (status == 400 and len(body.get("tools", [])) == 1
+                    and provider_error_code(run, call_index) == "tool_use_failed"):
+                # Complete the reserved submission turn without a stale tool conversation.
+                observations = [m["content"] for m in body["messages"] if m["role"] == "tool"]
+                context = dict(input=json.loads(body["messages"][1]["content"]), observations=observations)
+                implementation = stage == "implementation"
+                fallback = request_body(IMPLEMENT if implementation else TEST, context,
+                                        body["max_completion_tokens"], "text")
+                call_index += 1
+                status, _, artifact, usage = complete(fallback, key, run, call_index)
+                if status == 200 and usage["finish_reason"] == "stop":
+                    arguments = parse_json_answer(artifact) if implementation else {"source": artifact}
+                    function = dict(name=body["tools"][0]["function"]["name"], arguments=json.dumps(arguments))
+                    return {"tool_calls": [dict(id="local-submission", type="function", function=function)]}, "tool_calls"
             if status != 200 or not isinstance(reply, dict):
                 raise ValueError(f"SDK Builder {stage} returned HTTP {status}")
             return reply, usage["finish_reason"]

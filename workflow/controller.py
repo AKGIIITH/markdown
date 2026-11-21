@@ -21,6 +21,7 @@ def read_json(path):
 def stage(run, name, argv):
     command = [sys.executable, "-m", *argv]
     run.event("stage_start", stage=name)
+    print(f"Starting {name}", flush=True)
     start = time.monotonic()
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
     run.write(f"{name}.stdout.log", result.stdout)
@@ -38,6 +39,7 @@ def stage(run, name, argv):
             record["artifact"] = str(path)
             break
     run.event("stage_end", stage=name, gate=record["gate"], exit_code=result.returncode)
+    print(f"{name}: {record['gate']} ({record['seconds']:.1f}s)", flush=True)
     return record
 
 

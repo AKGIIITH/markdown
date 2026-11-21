@@ -131,6 +131,9 @@ def main():
         if args.issue == 2:
             # The public seeded change records which heading behavior regressed.
             # Give the auditor evidence for compatibility questions on a rerun.
+            source = git(args.repo, "show", f"{BASE}:markdown/extensions/toc.py").decode()
+            start = source.index("def slugify(")
+            audit_input["baseline_slugify"] = source[start:source.index("\ndef ", start + 1)]
             audit_input["public_seed_change"] = git(
                 args.repo, "diff", BASE, revision, "--", "markdown/extensions/toc.py"
             ).decode()
