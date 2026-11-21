@@ -132,7 +132,7 @@ def prepare_rereview(args, run, client):
     branch = pr["head"]["ref"]
     match = re.fullmatch(r"autose/issue-([1-5])-[a-f0-9]{12}", branch)
     if not match:
-        raise ValueError("Review round 2 requires a published AutoSE PR")
+        raise ValueError("Review requires a published AutoSE PR")
     issue = int(match[1])
     base, revision = CASES_BY_BASE[issue]
     record = dict(issue=issue, fork=FORK, number=args.pr, url=pr["html_url"],
@@ -154,16 +154,25 @@ def prepare_rereview(args, run, client):
     markers = {round_number: f"<!-- autose-review:{issue}:round-{round_number} -->"
                for round_number in (1, 2)}
     prior = [row for row in reviews if (row.get("body") or "").endswith(markers[1])]
-    if (len(prior) != 1 or prior[0]["state"] != "CHANGES_REQUESTED"
-            or prior[0]["commit_id"] == record["head_sha"]):
-        raise ValueError("Round 2 requires changes on the PR after an authenticated round 1 request")
     if any((row.get("body") or "").endswith(markers[2]) for row in reviews):
         raise ValueError("The second review round has already been used")
+    if prior:
+        if (len(prior) != 1 or prior[0]["state"] != "CHANGES_REQUESTED"
+                or prior[0]["commit_id"] == record["head_sha"]):
+            raise ValueError("Round 2 requires changes on the PR after an authenticated round 1 request")
+        round_number = 2
+    else:
+        # Only an authorized maintainer can request recovery on a published candidate.
+        # The first review must be on the original candidate head encoded by Release.
+        if branch != f"autose/issue-{issue}-{record['head_sha'][:12]}":
+            raise ValueError("First review requires the original published candidate head")
+        round_number = 1
     verify_pr(client.request(endpoint), record)
     run.save("pr.json", record)
-    run.write("pr.md", f"# Review round 2\n\n[PR #{args.pr}]({record['url']})\n\n"
+    run.write("pr.md", f"# Review round {round_number}\n\n[PR #{args.pr}]({record['url']})\n\n"
               f"Recheck CI on the current head `{record['head_sha']}`.\n")
     print(f"issue={issue}")
+    print(f"round={round_number}")
     return "published"
 
 
