@@ -1,0 +1,26 @@
+[
+  {
+    "path": "markdown/extensions/tables.py",
+    "start": 43,
+    "end": 53,
+    "total_lines": 262,
+    "text": "43: \n44:     def __init__(self, parser: blockparser.BlockParser, config: dict[str, Any]):\n45:         self.border: bool | int = False\n46:         self.separator: Sequence[str] = ''\n47:         self.config = config\n48:         self.table_class = config.get('table_class')\n49: \n50:         super().__init__(parser)\n51: \n52:     def test(self, parent: etree.Element, block: str) -> bool:\n53:         \"\"\"",
+    "next_start": null
+  },
+  {
+    "path": "markdown/extensions/tables.py",
+    "start": 107,
+    "end": 118,
+    "total_lines": 262,
+    "text": "107:             else:\n108:                 align.append(None)\n109: \n110:         # Build table\n111:         table = etree.SubElement(parent, 'table')\n112:         if self.table_class:\n113:             table.set('class', self.table_class)\n114:         thead = etree.SubElement(table, 'thead')\n115:         self._build_row(header, thead, align)\n116:         tbody = etree.SubElement(table, 'tbody')\n117:         if len(rows) == 0:\n118:             # Handle empty table",
+    "next_start": null
+  },
+  {
+    "path": "markdown/extensions/tables.py",
+    "start": 235,
+    "end": 245,
+    "total_lines": 262,
+    "text": "235:     \"\"\" Add tables to Markdown. \"\"\"\n236: \n237:     def __init__(self, **kwargs):\n238:         self.config = {\n239:             'use_align_attribute': [False, 'True to use align attribute instead of style.'],\n240:             'table_class': ['', 'CSS class(es) to add to generated tables.'],\n241:         }\n242:         \"\"\" Default configuration options. \"\"\"\n243: \n244:         super().__init__(**kwargs)\n245: ",
+    "next_start": null
+  }
+]

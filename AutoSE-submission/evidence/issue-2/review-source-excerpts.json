@@ -1,0 +1,10 @@
+[
+  {
+    "path": "markdown/extensions/toc.py",
+    "start": 36,
+    "end": 45,
+    "total_lines": 525,
+    "text": "36:     from markdown import Markdown\n37: \n38: \n39: def slugify(value: str, separator: str, unicode: bool = False) -> str:\n40:     \"\"\" Slugify a string, to make it URL friendly. \"\"\"\n41:     if not unicode:\n42:         # Replace Extended Latin characters with ASCII, i.e. `žlutý` => `zluty`\n43:         value = unicodedata.normalize('NFKD', value)\n44:         value = value.encode('ascii', 'ignore').decode('ascii')\n45:     value = re.sub(r'[^\\w\\s-]', '', value).strip().lower()",
+    "next_start": null
+  }
+]

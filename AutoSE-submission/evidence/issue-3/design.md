@@ -1,0 +1,11 @@
+## Source evidence
+markdown/extensions/tables.py (TableProcessor.run builds the <table> element) and tests/test_syntax/extensions/test_tables.py (verifies generated table HTML without class attribute). The public test example shows that a standard Markdown table is rendered as <table> with proper <thead> and <tbody> but no class attribute, confirming current behavior when no option is set.
+
+## Implementation plan
+1. Extend TableExtension configuration in markdown/extensions/tables.py: add a new config entry `'table_class': [None, 'CSS class(es) to add to generated tables.']`. 2. In TableProcessor.__init__, store the config value (self.table_class = config.get('table_class')). 3. In TableProcessor.run, after creating the table element (line 110), if self.table_class is truthy, set `table.set('class', self.table_class)`. 4. Ensure raw HTML tables are untouched – they bypass TableProcessor, so no change needed. 5. Update documentation/comments accordingly. 6. No changes to serialization; class attribute is part of the ElementTree node. 7. No impact on existing default because config default is None, matching current behavior. 8. Ensure the config parsing path in markdown/extensions/__init__.py will treat the new option as a string (no bool conversion).
+
+## Public tests
+- AC 1: input a Markdown table with extension config `{'tables': {'table_class': 'report-table'}}`; assert output contains `<table class="report-table">` and header/cell text matches source.
+- AC 2: input a Markdown table with config `{'tables': {'table_class': 'report-table compact'}}`; assert output contains `<table class="report-table compact">` preserving the space and content matches.
+- AC 3: input a Markdown table with no `table_class` config; assert output `<table>` has no `class` attribute (as in existing test_tables).
+- AC 4: input raw HTML `<table class="custom"><tr><td>X</td></tr></table>` with any `table_class` config; assert output HTML is identical, preserving the `class="custom"` attribute.

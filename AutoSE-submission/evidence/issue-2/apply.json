@@ -1,0 +1,11 @@
+{
+  "command": [
+    "git",
+    "apply",
+    "-"
+  ],
+  "checkout": "/tmp/autose-demo-base-2.hbvY/20261121T131749Z-public-testing-replay-e6aacd49/candidate",
+  "exit_code": 0,
+  "seconds": 0.003,
+  "counts": null
+}

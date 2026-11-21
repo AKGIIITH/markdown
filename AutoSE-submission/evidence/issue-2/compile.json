@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "-m",
+    "compileall",
+    "-q",
+    "markdown"
+  ],
+  "checkout": "/tmp/autose-demo-base-2.hbvY/20261121T131749Z-public-testing-replay-e6aacd49/candidate",
+  "exit_code": 0,
+  "seconds": 0.084,
+  "counts": null
+}

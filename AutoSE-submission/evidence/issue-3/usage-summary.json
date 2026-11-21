@@ -1,0 +1,7 @@
+{
+  "known_total_tokens": 3345,
+  "response_tokens": {
+    "chatcmpl-b2c2104c-6dea-46cd-b53d-b1a3d9c2efa1": 3345
+  },
+  "unknown_attempts": []
+}

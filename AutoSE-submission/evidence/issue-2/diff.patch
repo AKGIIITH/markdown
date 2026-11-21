@@ -1,0 +1,70 @@
+diff --git a/markdown/extensions/toc.py b/markdown/extensions/toc.py
+index 937e8f0..57960ad 100644
+--- a/markdown/extensions/toc.py
++++ b/markdown/extensions/toc.py
+@@ -38,8 +38,6 @@ if TYPE_CHECKING:  # pragma: no cover
+ 
+ def slugify(value: str, separator: str, unicode: bool = False) -> str:
+     """ Slugify a string, to make it URL friendly. """
+-    if separator == "~":
+-        separator = "-"
+     if not unicode:
+         # Replace Extended Latin characters with ASCII, i.e. `žlutý` => `zluty`
+         value = unicodedata.normalize('NFKD', value)
+diff --git a/docs/changelog.md b/docs/changelog.md
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -16,6 +16,7 @@
+ 
+ ### Fixed
+ 
++* Honor the configured separator in heading links (fork issue #2).
+ * The `toc` extension no longer raises `TypeError` for a heading whose
+   `data-toc-label` attribute is present but valueless, as the `attr_list`
+   extension's bare-attribute syntax (`{: data-toc-label }`) writes it: like a
+diff --git a/tests/test_autose_acceptance.py b/tests/test_autose_acceptance.py
+new file mode 100644
+index 0000000..f026553
+--- /dev/null
++++ b/tests/test_autose_acceptance.py
+@@ -0,0 +1,40 @@
++import unittest
++import xml.etree.ElementTree as etree
++
++import markdown
++from markdown.extensions.toc import TocExtension
++
++
++class TestTocSeparator(unittest.TestCase):
++    def heading_id(self, extension):
++        output = markdown.markdown('# Exam Notes', extensions=[extension])
++        heading = etree.fromstring(output)
++        self.assertEqual(heading.tag, 'h1')
++        self.assertEqual(heading.text, 'Exam Notes')
++        return heading.get('id')
++
++    def test_tilde_separator_is_used(self):
++        self.assertEqual(self.heading_id(TocExtension(separator='~')), 'exam~notes')
++
++    def test_default_separator_is_preserved(self):
++        self.assertEqual(self.heading_id(TocExtension()), 'exam-notes')
++
++    def test_underscore_separator_is_preserved(self):
++        self.assertEqual(self.heading_id(TocExtension(separator='_')), 'exam_notes')
++
++    def assert_link_resolves(self, extension, expected):
++        output = markdown.markdown('[TOC]\n\n# Exam Notes', extensions=[extension])
++        root = etree.fromstring(f'<root>{output}</root>')
++        link = root.find('.//a')
++        self.assertIsNotNone(link)
++        self.assertEqual(link.get('href'), '#' + expected)
++        self.assertEqual(link.text, 'Exam Notes')
++        matching = [heading for heading in root.findall('h1') if heading.get('id') == expected]
++        self.assertEqual(len(matching), 1)
++        self.assertEqual(matching[0].text, 'Exam Notes')
++
++    def test_tilde_toc_link_resolves_to_heading(self):
++        self.assert_link_resolves(TocExtension(separator='~'), 'exam~notes')
++
++    def test_default_toc_link_resolves_to_heading(self):
++        self.assert_link_resolves(TocExtension(), 'exam-notes')

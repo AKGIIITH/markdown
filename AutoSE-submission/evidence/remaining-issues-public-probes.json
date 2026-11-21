@@ -1,0 +1,42 @@
+[
+  {
+    "issue": 1,
+    "application_pin": "2c96e36ba4750cf18583d62e2fcecff49e077419",
+    "command": [
+      "/usr/bin/python3",
+      "-c",
+      "import markdown\nfor src in ('```{.python linenums}\\nx\\n```','```{.python linenums=true}\\nx\\n```'):\n try: print(markdown.markdown(src,extensions=['fenced_code','attr_list']))\n except Exception as e: print(type(e).__name__,str(e))"
+    ],
+    "exit": 0,
+    "stdout": "TypeError cannot serialize None (type NoneType)\nTypeError cannot serialize True (type bool)\n",
+    "stderr_last_line": "",
+    "traceback": false
+  },
+  {
+    "issue": 4,
+    "application_pin": "2c96e36ba4750cf18583d62e2fcecff49e077419",
+    "command": [
+      "/usr/bin/python3",
+      "-c",
+      "import markdown;print(markdown.markdown('# Parent\\n## Reminder {.no-toc}',extensions=['toc','attr_list'],extension_configs={'toc':{'exclude_class':'no-toc'}}))"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr_last_line": "KeyError: 'exclude_class'",
+    "traceback": true
+  },
+  {
+    "issue": 5,
+    "application_pin": "2c96e36ba4750cf18583d62e2fcecff49e077419",
+    "command": [
+      "/usr/bin/python3",
+      "-m",
+      "markdown",
+      "nonexistent-course-notes.md"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr_last_line": "FileNotFoundError: [Errno 2] No such file or directory: 'nonexistent-course-notes.md'",
+    "traceback": true
+  }
+]

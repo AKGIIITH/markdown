@@ -1,0 +1,41 @@
+{
+  "run": "44909670652",
+  "jobs": [
+    {
+      "name": "authorize",
+      "conclusion": "success"
+    },
+    {
+      "name": "publish",
+      "conclusion": "success"
+    },
+    {
+      "name": "release-preflight",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "plan-build",
+      "conclusion": "skipped"
+    },
+    {
+      "name": "verify-ci",
+      "conclusion": "success"
+    },
+    {
+      "name": "review",
+      "conclusion": "success"
+    },
+    {
+      "name": "post-review",
+      "conclusion": "success"
+    }
+  ],
+  "review": {
+    "html_url": "https://github.com/AKGIIITH/markdown/pull/29#pullrequestreview-6005551412",
+    "state": "COMMENTED",
+    "commit_id": "2d1b5c42050b75c7851bbf660590f90fc647e748",
+    "submitted_at": "2026-11-21T13:37:16Z",
+    "body": "AutoSE independent verdict: APPROVE\n\nVerdict: APPROVE\nRoute: Implementation\n\n**Findings**\n\n- **Feature implementation** \u2013 Added a `table_class` configuration option to the tables extension (`markdown/extensions/tables.py`) and applied it when building the `<table>` element (lines 111\u2011113). The default is an empty string, so no class attribute is added when the option is omitted.\n\n- **Configuration exposure** \u2013 Updated the extension\u2019s default config dictionary to include `table_class` (lines 239\u2011241), matching the issue\u2019s specification.\n\n- **Tests** \u2013 Introduced comprehensive acceptance tests (`tests/test_autose_acceptance.py`) that verify:\n  1. Single class is added correctly.\n  2. Multiple classes are preserved with spaces.\n  3. No class attribute when the option is omitted.\n  4. Raw HTML tables remain unchanged.\n\n- **Test results** \u2013 Inspection shows all tests passed (`exit_code: 0`, 0 failures/errors), confirming the implementation behaves as expected.\n\n- **No regressions** \u2013 Existing functionality (table generation without class, handling of raw HTML) remains intact; the added logic is gated by the presence of `self.table_class`.\n\nOverall, the changes fulfill the acceptance criteria without introducing side effects. No further modifications are required.\n\n<!-- autose-review:3:round-1 -->"
+  },
+  "author": "github-actions[bot]"
+}

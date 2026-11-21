@@ -1,0 +1,139 @@
+diff --git a/markdown/extensions/tables.py b/markdown/extensions/tables.py
+index 1a230db..36a752f 100644
+--- a/markdown/extensions/tables.py
++++ b/markdown/extensions/tables.py
+@@ -45,6 +45,7 @@ class TableProcessor(BlockProcessor):
+         self.border: bool | int = False
+         self.separator: Sequence[str] = ''
+         self.config = config
++        self.table_class = config.get('table_class')
+ 
+         super().__init__(parser)
+ 
+@@ -108,6 +109,8 @@ class TableProcessor(BlockProcessor):
+ 
+         # Build table
+         table = etree.SubElement(parent, 'table')
++        if self.table_class:
++            table.set('class', self.table_class)
+         thead = etree.SubElement(table, 'thead')
+         self._build_row(header, thead, align)
+         tbody = etree.SubElement(table, 'tbody')
+@@ -234,6 +237,7 @@ class TableExtension(Extension):
+     def __init__(self, **kwargs):
+         self.config = {
+             'use_align_attribute': [False, 'True to use align attribute instead of style.'],
++            'table_class': ['', 'CSS class(es) to add to generated tables.'],
+         }
+         """ Default configuration options. """
+ 
+diff --git a/docs/changelog.md b/docs/changelog.md
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -13,6 +13,10 @@
+ See the [Contributing Guide](contributing.md) for details.
+ 
+ ## Unreleased
++
++### Added
++
++* Allow a class on generated tables (fork issue #3).
+ 
+ ### Fixed
+ 
+diff --git a/tests/test_autose_acceptance.py b/tests/test_autose_acceptance.py
+new file mode 100644
+index 0000000..bb64b76
+--- /dev/null
++++ b/tests/test_autose_acceptance.py
+@@ -0,0 +1,90 @@
++import unittest
++import markdown
++from xml.etree import ElementTree as ET
++
++
++class TestTableClassOption(unittest.TestCase):
++    """Tests for the ``table_class`` option of the tables extension."""
++
++    def _render(self, text, table_class=None):
++        """Render *text* to HTML using the tables extension.
++
++        If *table_class* is provided it is passed via ``extension_configs``.
++        """
++        if table_class is not None:
++            ext_cfg = {"tables": {"table_class": table_class}}
++        else:
++            ext_cfg = {}
++        md = markdown.Markdown(extensions=["tables"], extension_configs=ext_cfg)
++        return md.convert(text)
++
++    def _find_table(self, html):
++        """Return the first <table> element parsed from *html*."""
++        # Wrap in a root element to ensure well‑formed XML.
++        root = ET.fromstring(f"<root>{html}</root>")
++        return root.find(".//table")
++
++    def test_single_class_applied(self):
++        """Generated tables receive the configured single CSS class."""
++        md = (
++            "| Header1 | Header2 |\n"
++            "|--------|--------|\n"
++            "| Cell1  | Cell2  |\n"
++        )
++        html = self._render(md, table_class="report-table")
++        table = self._find_table(html)
++        self.assertIsNotNone(table, "No <table> element found in output")
++        self.assertEqual(table.get("class"), "report-table")
++        # Verify header and cell contents are preserved.
++        header_cells = [c.text for c in table.find("thead").findall("tr/th")]
++        self.assertEqual(header_cells, ["Header1", "Header2"])
++        body_cells = [c.text for c in table.find("tbody").findall("tr/td")]
++        self.assertEqual(body_cells, ["Cell1", "Cell2"])
++
++    def test_multiple_classes_preserved(self):
++        """Generated tables receive multiple CSS classes preserving spaces."""
++        md = (
++            "| H1 | H2 |\n"
++            "|----|----|\n"
++            "| A  | B  |\n"
++        )
++        html = self._render(md, table_class="report-table compact")
++        table = self._find_table(html)
++        self.assertIsNotNone(table, "No <table> element found in output")
++        self.assertEqual(table.get("class"), "report-table compact")
++        # Verify content.
++        header = [c.text for c in table.find("thead").findall("tr/th")]
++        self.assertEqual(header, ["H1", "H2"])
++
++    def test_no_class_when_option_omitted(self):
++        """When ``table_class`` is omitted, generated tables have no class attribute."""
++        md = (
++            "| X | Y |\n"
++            "|---|---|\n"
++            "| 1 | 2 |\n"
++        )
++        html = self._render(md)
++        table = self._find_table(html)
++        self.assertIsNotNone(table, "No <table> element found in output")
++        self.assertIsNone(table.get("class"))
++        # Ensure the table still contains the expected cells.
++        self.assertIn("<th>X</th>", html)
++        self.assertIn("<td>1</td>", html)
++
++    def test_raw_html_table_unchanged(self):
++        """Raw HTML tables are emitted unchanged regardless of the option."""
++        raw = '<table class="custom"><tr><td>Raw</td></tr></table>'
++        md = f"{raw}\n\n| H | I |\n|---|---|\n| J | K |\n"
++        html = self._render(md, table_class="report-table")
++        # The raw table should appear exactly as provided.
++        self.assertIn(raw, html)
++        # Ensure the generated table has the class while the raw one does not gain it.
++        generated_table = self._find_table(html.replace(raw, ""))
++        self.assertIsNotNone(generated_table, "Generated <table> not found")
++        self.assertEqual(generated_table.get("class"), "report-table")
++        # Verify the raw table still has its original class attribute.
++        self.assertIn('<table class="custom">', html)
++
++
++if __name__ == "__main__":
++    unittest.main()
