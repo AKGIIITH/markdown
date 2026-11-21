@@ -2,6 +2,58 @@
 set -euo pipefail
 
 repo=AKGIIITH/markdown
+diagnose_run() (
+    run_id=$1
+    evidence=$(mktemp -d)
+    trap 'rm -r -- "$evidence"' EXIT
+    gh run download "$run_id" --repo "$repo" --name autose-model-evidence --dir "$evidence"
+    python3 - "$evidence" <<'PYTHON'
+import json
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+for stages in sorted(root.rglob("stages.json")):
+    records = json.loads(stages.read_text())
+    for record in records:
+        print(f"{record['stage']}: {record['gate']} ({record['seconds']:.1f}s)")
+    if records and records[-1].get("artifact"):
+        artifact = stages.parent / Path(records[-1]["artifact"]).name
+        for name in ("error.json", "runner-error.json", "judgment.json", "return-to-stage.json"):
+            path = artifact / name
+            if path.is_file():
+                data = json.loads(path.read_text())
+                if name == "judgment.json":
+                    data = data.get("blocking_ambiguities", [])
+                print(f"{name}: {json.dumps(data, ensure_ascii=False)}")
+PYTHON
+)
+
+if [[ "${1:-}" == --diagnose ]]; then
+    if [[ $# != 2 || ! "$2" =~ ^[0-9]+$ ]]; then
+        printf 'Usage: bash workflow/demo.sh --diagnose <Actions run ID>\n' >&2
+        exit 2
+    fi
+    diagnose_run "$2"
+    exit
+fi
+
+if [[ "${1:-}" == --clarify ]]; then
+    if [[ $# != 3 || ! "$2" =~ ^[1-5]$ || ! -s "$3" ]]; then
+        printf 'Usage: bash workflow/demo.sh --clarify <issue number 1–5> <nonempty clarification file>\n' >&2
+        exit 2
+    fi
+    (
+        body=$(mktemp)
+        trap 'rm -f -- "$body"' EXIT
+        gh issue view "$2" --repo "$repo" --json body --jq .body > "$body"
+        printf '\n## Maintainer clarification\n\n' >> "$body"
+        cat -- "$3" >> "$body"
+        gh issue edit "$2" --repo "$repo" --body-file "$body"
+    )
+    exit
+fi
+
 if (( $# == 0 )); then
     set -- 2 3
 fi
@@ -65,7 +117,10 @@ for issue in "$@"; do
     fi
 
     printf 'Issue #%s Actions run: https://github.com/%s/actions/runs/%s\n' "$issue" "$repo" "$run"
-    gh run watch "$run" --repo "$repo" --exit-status || status=1
+    if ! gh run watch "$run" --repo "$repo" --exit-status; then
+        diagnose_run "$run" || true
+        status=1
+    fi
     out=$(mktemp -d "${TMPDIR:-/tmp}/autose-demo-${run}.XXXXXX")
     gh run download "$run" --repo "$repo" --dir "$out" \
         --pattern autose-publication --pattern autose-posted-review || {

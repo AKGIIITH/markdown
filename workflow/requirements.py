@@ -22,9 +22,17 @@ Return a JSON object with a 'criteria' list. Include one object per criterion
 with 'index' (one-based), 'grounded' (boolean), 'testable' (boolean), and
 'reason' (nonempty string). Include 'blocking_ambiguities', a list of questions
 whose answers require maintainer judgment and would materially change the
-expected behavior. Leave it empty when a conservative interpretation is
-sufficient or the ambiguity is an implementation detail. Do not rewrite the
-specification or propose implementation changes."""
+expected behavior. Before listing a question, check whether the issue already
+answers it in its example, expected output, or scope. If a criterion is grounded
+because the issue explicitly calls for that behavior, do not then ask whether
+that same behavior is intended. Preserve existing behavior outside the scope
+of the reported change. For example, a change to generated HTML does not imply
+changes to manually authored HTML. Treat an option name used in an explicit
+configuration example as the requested name unless the issue gives a conflicting
+name. Block only when two plausible in-scope interpretations remain and choosing
+between them changes a required assertion. Leave the list empty when a
+conservative interpretation suffices or the question concerns implementation.
+Do not rewrite the specification or propose implementation changes."""
 
 
 def check_quality(answer, expected_count):
