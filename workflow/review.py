@@ -88,6 +88,32 @@ def tool_result(source, run, function, index, check_image):
     return source.call(name, args)
 
 
+def inspect_small_change(diff, source):
+    """Read each changed production hunk directly from the reviewed commit."""
+    ranges = []
+    path = ""
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path = ""
+        elif line.startswith("+++ b/"):
+            path = line[6:]
+        elif path.startswith("markdown/") and line.startswith("@@ "):
+            match = re.match(r"@@ -[0-9,]+ \+(\d+)(?:,(\d+))? @@", line)
+            if not match or len(ranges) >= 5:
+                return []
+            start, count = int(match[1]), int(match[2] or 1)
+            if count > 24:
+                return []
+            ranges.append((path, max(1, start - 2), start + count + 1))
+    excerpts = []
+    for path, start, end in ranges:
+        result = source.call("read_file", dict(path=path, start=start, end=end))
+        if "text" not in result:
+            return []
+        excerpts.append(result)
+    return excerpts if sum(len(row["text"]) for row in excerpts) <= 4200 else []
+
+
 def review(inputs, source, run, respond, lookups, lookup_cap, completion_cap, check_image):
     messages = [{"role": "system", "content": INSPECT},
                 {"role": "user", "content": json.dumps(inputs, ensure_ascii=False)}]
@@ -96,6 +122,13 @@ def review(inputs, source, run, respond, lookups, lookup_cap, completion_cap, ch
         evidence.append(tool_result(source, run, {
             "name": "run_public_suite", "arguments": "{}",
         }, 0, check_image))
+        excerpts = inspect_small_change(inputs["diff"], source)
+        if excerpts:
+            run.save("review-source-excerpts.json", excerpts)
+            evidence.extend(excerpts)
+            if evidence[0].get("exit_code") == 0:
+                evidence[0].pop("output_tail", None)
+            lookups = 0
         messages[0]["content"] += (
             " The public suite was run independently. Spend your tool calls on source inspection."
         )
@@ -130,6 +163,8 @@ def review(inputs, source, run, respond, lookups, lookup_cap, completion_cap, ch
     if status != 200 or usage.get("finish_reason") != "stop" or (message or {}).get("tool_calls"):
         raise ValueError(f"Review writer returned HTTP {status}, finish {usage.get('finish_reason')!r}")
     result = parse_review(text)
+    if check_image and evidence[0].get("exit_code") != 0 and result["verdict"] == "APPROVE":
+        raise ValueError("Reviewer approved despite a failed independent suite")
     run.write("review.md", text)
     return result
 
