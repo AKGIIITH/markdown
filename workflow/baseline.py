@@ -167,13 +167,27 @@ def validate(obj):
         if not nonempty(question):
             raise ValueError(f"unresolved[{index}] must be a nonempty string")
 
+def regression_context(repo, revision):
+    if revision != SEED:
+        return {}
+    path = "markdown/extensions/toc.py"
+    source = git(repo, "show", f"{BASE}:{path}").decode()
+    start = source.index("def slugify(")
+    return dict(baseline_slugify=source[start:source.index("\ndef ", start + 1)],
+                public_seed_change=git(repo, "diff", BASE, revision, "--", path).decode())
+
+
 def planner(args, run):
     sha, _, filename = CASES[args.issue]
     issue_file = getattr(args, "issue_file", None) or args.repo / "experiment/issues" / filename
     issue = issue_file.read_text(encoding="utf-8")
     skill = args.skill.read_text()
-    payload = {"issue": issue}
+    payload = {"issue": issue, **regression_context(args.repo, sha)}
     instructions = SYSTEM
+    if "public_seed_change" in payload:
+        instructions += (" Use the supplied baseline function and seeded diff as compatibility evidence."
+                         " Existing normalization steps outside the seeded change retain their baseline behavior."
+                         " Resolve questions answered by that evidence even if prior feedback raised them.")
     feedback = getattr(args, "feedback", None)
     if feedback:
         payload["prior_quality_feedback"] = json.loads(feedback.read_text(encoding="utf-8"))
