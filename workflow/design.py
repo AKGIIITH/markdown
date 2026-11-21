@@ -34,7 +34,9 @@ new symbols and new files from existing ones. Keep the handoff concise.
 When proposing a configuration change, verify how the existing API interprets
 the proposed default and value types. Under Public tests, map each criterion
 number to its input and observable assertion using an AC-labelled list or a
-numbered table. Do not change the accepted criteria or write a patch."""
+numbered table. Aim for 450 words or fewer. Start with the first required
+heading and provide the handoff directly. Do not change the accepted criteria
+or write a patch."""
 
 TOOLS = [
     {"type": "function", "function": {
@@ -316,19 +318,29 @@ def plan(inputs, source, run, respond, max_calls, completion_cap, final_completi
             {"role": "user", "content": json.dumps({**inputs, "excerpts": excerpts}, ensure_ascii=False)},
         ],
     )
-    run.event("design_writing", call=index, inspected_files=sorted(source.reads))
-    run.save(f"design-request-{index}.json", body)
-    status, _, message, usage = respond(body, index)
-    if status != 200 or not isinstance(message, dict):
-        raise ValueError(f"Design writing failed with HTTP status {status}")
-    reason = usage.get("finish_reason")
-    text = message.get("content")
-    if isinstance(text, str):
-        run.write("design-draft.md", text)
-    if reason != "stop" or message.get("tool_calls"):
-        raise ValueError(f"Incomplete text-only design (finish reason {reason!r})")
-    validate_design(text, len(inputs["requirements"]["criteria"]), source.reads, excerpts)
-    return text
+    if MODEL.startswith("openai/gpt-oss-"):
+        body["reasoning_effort"] = "low"
+    for retry in range(2):
+        call = index + retry
+        run.event("design_writing", call=call, inspected_files=sorted(source.reads))
+        run.save(f"design-request-{call}.json", body)
+        status, _, message, usage = respond(body, call)
+        if status != 200 or not isinstance(message, dict):
+            raise ValueError(f"Design writing failed with HTTP status {status}")
+        reason = usage.get("finish_reason")
+        text = message.get("content")
+        if isinstance(text, str):
+            run.write("design-draft.md", text)
+        if reason == "length" and retry == 0:
+            if isinstance(text, str):
+                run.write("design-truncated.md", text)
+            run.event("design_writing_retry", call=call + 1, reason=reason)
+            body = {**body, "max_completion_tokens": max(5000, body["max_completion_tokens"])}
+            continue
+        if reason != "stop" or message.get("tool_calls"):
+            raise ValueError(f"Incomplete text-only design (finish reason {reason!r})")
+        validate_design(text, len(inputs["requirements"]["criteria"]), source.reads, excerpts)
+        return text
 
 
 def read_json(path):
