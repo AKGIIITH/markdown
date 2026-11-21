@@ -20,7 +20,7 @@ else:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CASES_BY_BASE = {issue: ("a3/bug02-seed" if row[0] == SEED else "main", row[0])
+CASES_BY_BASE = {issue: ("a3/demo-toc-base" if row[0] == SEED else "a3/demo-markdown-base", row[0])
                  for issue, row in CASES.items()}
 COUNTS = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 PUBLIC_DIRS = ("markdown", "tests", "docs")
