@@ -33,12 +33,16 @@ def save_quota(path, headers, calls):
                     encoding="utf-8")
 
 
+def completion_room(messages, tools):
+    prompt = json.dumps([messages, tools], ensure_ascii=False)
+    return 8000 - 400 - (len(prompt.encode("utf-8")) + 2) // 3
+
+
 def _chat(body, key, run, attempt):
     if os.getenv("AUTOSE_RATE_STATE"):
         # Estimate the prompt from message/tool text and reserve protocol overhead.
         # Groq still owns the exact model tokenizer and has the final say.
-        prompt = json.dumps([body["messages"], body.get("tools", [])], ensure_ascii=False)
-        available = 8000 - 400 - (len(prompt.encode("utf-8")) + 2) // 3
+        available = completion_room(body["messages"], body.get("tools", []))
         if available < 900:
             raise ValueError("Request exceeds the live prompt budget. Narrow the issue or retrieved excerpts.")
         body = {**body, "max_completion_tokens": min(available, body["max_completion_tokens"])}

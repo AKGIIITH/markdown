@@ -4,6 +4,7 @@ import json
 from typing import TypedDict
 
 from .design import TOOLS
+from .model import completion_room
 
 
 EDIT = {
@@ -69,6 +70,23 @@ def run_stage_graph(steps):
             emitted.clear()
 
 
+def fit_builder_request(body, submit_tool):
+    if completion_room(body["messages"], body["tools"]) >= 900:
+        return body
+    # The latest lookup stays available. Omit examples and reference source
+    # already summarized by the accepted design when moving to submission.
+    messages = list(body["messages"])
+    task = json.loads(messages[1]["content"])
+    if "editable_paths" in task:
+        task["source_excerpts"] = [row for row in task["source_excerpts"]
+                                   if row["path"] in task["editable_paths"]]
+    messages[1] = {"role": "user", "content": json.dumps(task, ensure_ascii=False, separators=(",", ":"))}
+    messages.append({"role": "user", "content": "Using the verified source, submit the smallest change "
+                     "needed for the accepted criteria. Skip design steps already present in the source."})
+    return dict(body, messages=messages, tools=[submit_tool],
+                tool_choice={"type": "function", "function": {"name": submit_tool["function"]["name"]}})
+
+
 def run_builder_stage(stage, body, planning_inputs, source, respond, run, budget):
     from langgraph.graph import END, START, StateGraph
     from langsmith import tracing_context
@@ -115,6 +133,8 @@ def run_builder_stage(stage, body, planning_inputs, source, respond, run, budget
                         f"Repository lookup is complete. Submit the final artifact using {submit} now."}]
         request_body = dict(**base, messages=messages, tools=tools,
                             tool_choice=choice, parallel_tool_calls=False)
+        request_body = fit_builder_request(request_body, submit_tool)
+        tools = request_body["tools"]
         message, finish = request(request_body, state)
         calls = message.get("tool_calls") or []
         if (finish != "tool_calls" or not isinstance(calls, list) or len(calls) != 1

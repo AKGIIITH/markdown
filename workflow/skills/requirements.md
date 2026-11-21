@@ -8,6 +8,8 @@ Read the whole issue. Distinguish the reported current behavior, requested chang
 
 For each proposed requirement, distinguish what the author explicitly requests, what follows from that request, and what still needs a decision. A stated obligation comes directly from the issue. A derived check belongs in the specification when the stated behavior entails its expected result. For either, identify the words that support the entire claim, including its conditions and exceptions. A plausible preference, candidate technology, or guessed threshold remains an open decision if it changes acceptance. Leave choices that affect only the implementation to design.
 
+Read explicit scope exclusions before drafting. Omit excluded cases from both criteria and unresolved questions, including when previous feedback asks about them.
+
 ## Convert evidence into a reviewable specification
 
 1. Summarize the user's goal and affected public behavior in one or two sentences. Preserve every requested capability, including any whose details still need clarification. Distinguish a reported symptom from an established cause.

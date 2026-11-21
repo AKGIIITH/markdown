@@ -32,6 +32,9 @@ configuration example as the requested name unless the issue gives a conflicting
 name. Block only when two plausible in-scope interpretations remain and choosing
 between them changes a required assertion. Leave the list empty when a
 conservative interpretation suffices or the question concerns implementation.
+Before returning blocking_ambiguities, compare each question with the issue's
+scope exclusions. An expressly excluded case has no required assertion. Discard
+such questions even if the proposal repeats them in unresolved.
 Do not rewrite the specification or propose implementation changes."""
 
 

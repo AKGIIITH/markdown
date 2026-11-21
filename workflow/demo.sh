@@ -6,8 +6,15 @@ diagnose_run() (
     run_id=$1
     evidence=$(mktemp -d)
     trap 'rm -r -- "$evidence"' EXIT
-    gh run download "$run_id" --repo "$repo" --name autose-model-evidence --dir "$evidence"
-    python3 - "$evidence" <<'PYTHON'
+    if ! gh run download "$run_id" --repo "$repo" --name autose-model-evidence --dir "$evidence"; then
+        # Use a fresh directory if the first download left a partial artifact.
+        mkdir "$evidence/retry"
+        gh run download "$run_id" --repo "$repo" --name autose-model-evidence --dir "$evidence/retry" || return 1
+        evidence_root="$evidence/retry"
+    else
+        evidence_root="$evidence"
+    fi
+    python3 - "$evidence_root" <<'PYTHON'
 import json
 from pathlib import Path
 import sys
@@ -132,6 +139,7 @@ WATCH
     then
         diagnose_run "$run" || true
         status=1
+        continue
     fi
     out=$(mktemp -d "${TMPDIR:-/tmp}/autose-demo-${run}.XXXXXX")
     gh run download "$run" --repo "$repo" --dir "$out" \
