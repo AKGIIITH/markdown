@@ -16,6 +16,7 @@ See the [Contributing Guide](contributing.md) for details.
 
 ### Fixed
 
+* Honor the configured separator in heading links (fork issue #2).
 * The `toc` extension no longer raises `TypeError` for a heading whose
   `data-toc-label` attribute is present but valueless, as the `attr_list`
   extension's bare-attribute syntax (`{: data-toc-label }`) writes it: like a
