@@ -87,3 +87,12 @@ the next hosted run. For Issue 5, the public CLI tests are now visible to Design
 The original brief still allows the Requirements gate to ask about scope.
 These checks validate failure reproduction and Design input, with no new live
 model output or published candidates for the three issues.
+
+## Continuation from the failed terminal demo
+
+| Issue | Saved starting point | Candidate | Hosted checks |
+| --- | --- | --- | --- |
+| 2 | [Design passed before the Builder exceeded its prompt budget](https://github.com/AKGIIITH/markdown/actions/runs/44896921009). The compact submission removed the two lines causing the separator regression. | [PR 22](https://github.com/AKGIIITH/markdown/pull/22) | [Application CI passed](https://github.com/AKGIIITH/markdown/actions/runs/44899108239). |
+| 3 | [Requirements paused on two excluded cases](https://github.com/AKGIIITH/markdown/actions/runs/44897356445). After the corrected requirements passed, Design and Builder continued from the saved evidence. Public tests exposed a configuration type error. | [PR 24](https://github.com/AKGIIITH/markdown/pull/24) | [Initial lint failure](https://github.com/AKGIIITH/markdown/actions/runs/44904246145). After adding the missing newline to the generated test file, [CI passed on the same PR](https://github.com/AKGIIITH/markdown/actions/runs/44904880505). |
+
+These were operator-guided stage continuations. The original issue workflows stopped before publication. Each candidate passed three private tests. The full local suite recorded 1,117 passes for issue 2 and 1,116 for issue 3, with 111 skips each. Fresh local GPT-OSS 120B reviews approved the verified heads of PRs 22 and 24. Each reviewer saw the public issue, diff, and pinned repository. Local review had no Docker runner. Hosted review posting requires the separate reviewer identity.

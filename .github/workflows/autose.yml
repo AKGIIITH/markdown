@@ -144,6 +144,7 @@ jobs:
       contents: read
     outputs:
       review_issue: ${{ steps.rereview.outputs.issue }}
+      review_round: ${{ steps.rereview.outputs.round }}
     concurrency:
       group: autose-publish-${{ needs.authorize.outputs.review_pr || needs.authorize.outputs.issue }}
       cancel-in-progress: false
@@ -170,7 +171,7 @@ jobs:
           test "${#input[@]}" -eq 1
           python -m workflow.publish --issue "$ISSUE" --out "$RUNNER_TEMP/autose-publication" \
             open --preflight "${input[0]}"
-      - name: Validate the changed PR head for round two
+      - name: Resume review on the verified PR head
         id: rereview
         if: needs.authorize.outputs.review_pr != ''
         env:
@@ -179,7 +180,7 @@ jobs:
         run: |
           set -o pipefail
           python -m workflow.publish --out "$RUNNER_TEMP/autose-publication" rereview --pr "$PR" | tee "$RUNNER_TEMP/rereview.log"
-          sed -n '/^issue=[1-5]$/p' "$RUNNER_TEMP/rereview.log" >> "$GITHUB_OUTPUT"
+          sed -n -e '/^issue=[1-5]$/p' -e '/^round=[12]$/p' "$RUNNER_TEMP/rereview.log" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -252,7 +253,7 @@ jobs:
           ISSUE: ${{ needs.authorize.outputs.issue || needs.publish.outputs.review_issue }}
           BUDGET: ${{ vars.AUTOSE_PROVIDER_BUDGET }}
           AUTOSE_GROQ_MODEL: openai/gpt-oss-120b
-          REVIEW_ROUND: ${{ needs.authorize.outputs.review_pr != '' && '2' || '1' }}
+          REVIEW_ROUND: ${{ needs.publish.outputs.review_round || '1' }}
         run: |
           input=("$RUNNER_TEMP"/autose-ci/*-ci-verification-*)
           test "${#input[@]}" -eq 1

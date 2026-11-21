@@ -87,6 +87,9 @@ open PR. The existing [video](experiment/demo.mp4) shows the recorded evidence w
 - On a first-round change request, read the return-stage artifact, apply the
   fix on the same PR branch, then comment `/autose review` on the PR. The
   workflow verifies the changed head and CI before a fresh second review.
+  If a candidate is already published and has no posted review, the same
+  command on the candidate PR resumes at CI verification for round one.
+  Earlier planning, building and public tests do not need to run again.
   A maintainer makes the final merge or close decision.
 
 ### Models and evidence

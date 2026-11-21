@@ -32,7 +32,8 @@ file and the public test example. Explain what the test example demonstrates.
 Name existing repository paths and symbols for implementation edits. Distinguish
 new symbols and new files from existing ones. Keep the handoff concise.
 When proposing a configuration change, verify how the existing API interprets
-the proposed default and value types. Under Public tests, map each criterion
+the proposed default and value types. In this repository, a None or bool default
+causes Extension.setConfig to parse the supplied value as a boolean. Under Public tests, map each criterion
 number to its input and observable assertion using an AC-labelled list or a
 numbered table. Aim for 450 words or fewer. Start with the first required
 heading and provide the handoff directly. Do not change the accepted criteria
@@ -61,7 +62,9 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "minLength": 1},
             "scope": {"type": "string", "enum": ["source", "tests"]},
-        }, "required": ["query", "scope"], "additionalProperties": False},
+            "path": {"type": "string", "description": "Pinned file or directory under markdown or tests."},
+            "max_results": {"type": "integer", "minimum": 1, "maximum": 20},
+        }, "required": ["query"], "additionalProperties": False},
     }},
     {"type": "function", "function": {
         "name": "read_file", "description": (
@@ -129,20 +132,37 @@ class Source:
         return dict(paths=matching_paths[:20], total=len(matching_paths))
 
     def search_text(self, args):
-        if set(args) != {"query", "scope"}:
-            return {"error": "Use a literal query and scope source or tests"}
-        query, scope = args["query"], args["scope"]
-        if (scope not in ("source", "tests") or not isinstance(query, str)
-                or not 1 <= len(query.strip()) <= 100 or any(c in query for c in "\r\n\0")):
-            return {"error": "Use one literal phrase of at most 100 characters"}
-        directory = "tests" if scope == "tests" else "markdown"
+        if set(args) - {"query", "scope", "path", "max_results"}:
+            return {"error": "Unknown text search argument"}
+        query = args.get("query")
+        scope = args.get("scope")
+        path = args.get("path")
+        limit = args.get("max_results", 16)
+        if (not isinstance(query, str) or not 1 <= len(query.strip()) <= 100
+                or any(c in query for c in "\r\n\0") or type(limit) is not int or not 1 <= limit <= 20):
+            return {"error": "Use a bounded literal query and at most 20 results"}
+        if scope is not None and scope not in ("source", "tests"):
+            return {"error": "Use scope source or tests"}
+        if path is None:
+            if scope is None:
+                return {"error": "Supply a scope or a pinned public path"}
+            directory = "tests" if scope == "tests" else "markdown"
+        else:
+            if not isinstance(path, str):
+                return {"error": "Expected a repository-relative path"}
+            directory = path.rstrip("/")
+            top = directory.split("/")[0]
+            if (top not in ("markdown", "tests") or
+                    (scope is not None and (scope == "tests") != (top == "tests")) or
+                    not any(p == directory or p.startswith(directory + "/") for p in self.paths)):
+                return {"error": "Path outside the chosen pinned public tree"}
         command = ["git", "-C", str(self.repo), "grep", "-I", "-i", "-n", "-F", "-m", "2",
-                   "-e", query.strip(), self.revision, "--", directory]
+                   "-e", query.strip(), self.revision, "--", ":(literal)" + directory]
         result = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
         if result.returncode not in (0, 1):
             return {"error": "Could not search the pinned revision"}
         matches = result.stdout.splitlines()
-        return dict(matches=[line.removeprefix(self.revision + ":")[:240] for line in matches[:16]],
+        return dict(matches=[line.removeprefix(self.revision + ":")[:240] for line in matches[:limit]],
                     total=len(matches))
 
 
