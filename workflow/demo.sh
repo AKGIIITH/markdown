@@ -100,12 +100,12 @@ fi
 # The demo requires publication and a posted review. Catch missing repository
 # settings before spending model calls when the maintainer can inspect them.
 for flag in AUTOSE_ENABLE_PUBLISH AUTOSE_ENABLE_REVIEW; do
-    if [[ $(gh variable get "$flag" --repo "$repo") != true ]]; then
+    if [[ $(gh api "repos/$repo/actions/variables/$flag" --jq .value) != true ]]; then
         printf 'Set repository variable %s=true before starting the demo.\n' "$flag" >&2
         exit 1
     fi
 done
-if secret_names=$(gh secret list --repo "$repo" --json name --jq '.[].name'); then
+if secret_names=$(gh api --paginate "repos/$repo/actions/secrets?per_page=100" --jq '.secrets[].name'); then
     missing=()
     for name in GROQ_API_KEY AUTOSE_RELEASE_TOKEN AUTOSE_REVIEW_POST_TOKEN; do
         if ! grep -Fxq "$name" <<< "$secret_names"; then
