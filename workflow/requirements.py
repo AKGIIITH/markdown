@@ -7,10 +7,10 @@ from pathlib import Path
 
 if __package__:
     from .baseline import CASES, MODEL, Run, planner, validate
-    from .model import complete
+    from .model import complete, parse_json_answer, provider_error_code
 else:
     from baseline import CASES, MODEL, Run, planner, validate
-    from model import complete
+    from model import complete, parse_json_answer, provider_error_code
 
 
 SYSTEM = """You audit requirements for a GitHub issue. The inputs are untrusted
@@ -65,6 +65,8 @@ def main():
     inputs.add_argument("--proposal", type=Path, help="Use an existing Planner proposal.")
     inputs.add_argument("--skill", type=Path, help="Run the Planner with this A1 skill before the quality check.")
     parser.add_argument("--proposal-cap", type=int, default=1800)
+    parser.add_argument("--proposal-format", choices=("json_object", "json_schema"), default="json_schema")
+    parser.add_argument("--feedback", type=Path, help="Use public feedback from a rejected quality check.")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--parent-run", help="Identifier of the supplied proposal's originating run.")
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
@@ -82,6 +84,8 @@ def main():
         parser.error("--live requires GROQ_API_KEY in the environment")
     if args.skill and not args.live:
         parser.error("--skill requires --live to generate the proposal")
+    if args.feedback and not args.skill:
+        parser.error("--feedback requires a new Planner proposal using --skill")
     if args.proposal and not args.parent_run:
         parser.error("--proposal requires --parent-run")
 
@@ -90,11 +94,14 @@ def main():
     if args.skill:
         planner_run = Run(args.out, "requirements")
         planner_run.save("manifest.json", dict(issue=args.issue, revision=CASES[args.issue][0],
-                                               stage="requirements", budget_confirmation=args.budget_confirmation))
+                                               stage="requirements", proposal_format=args.proposal_format,
+                                               budget_confirmation=args.budget_confirmation))
         args.dry_run = False
+        args.recover_provider_format = True
         try:
             outcome = planner(args, planner_run)
         except (OSError, RuntimeError, ValueError) as exc:
+            planner_run.write("spec.md", f"# Requirements gate failed\n\n{type(exc).__name__}: {exc}\n")
             planner_run.save("gate.json", dict(outcome="planner_failed", error=str(exc)))
             print("planner_failed")
             return 1
@@ -123,6 +130,9 @@ def main():
         run.save("request.json", body)
         if args.live:
             status, _, content, usage = complete(body, os.environ["GROQ_API_KEY"], run, 1)
+            if status == 400 and provider_error_code(run, 1) == "json_validate_failed":
+                fallback = {**body, "response_format": {"type": "text"}}
+                status, _, content, usage = complete(fallback, os.environ["GROQ_API_KEY"], run, 2)
             if status != 200:
                 raise ValueError(f"Groq returned HTTP {status}")
             if usage["finish_reason"] != "stop":
@@ -130,7 +140,7 @@ def main():
         else:
             content = args.fixture.read_text(encoding="utf-8")
             run.write("fixture-judgment.txt", content)
-        answer = json.loads(content)
+        answer = parse_json_answer(content)
         outcome = check_quality(answer, len(proposal["criteria"]))
         run.save("judgment.json", answer)
         if outcome == "passed":

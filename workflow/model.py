@@ -8,27 +8,46 @@ import time
 from urllib import error, request
 
 
-def pace(path, request_size, completion_cap, run):
-    if path is None or not path.is_file():
-        return
-    quota = json.loads(path.read_text(encoding="utf-8"))
-    estimated = request_size // 3 + completion_cap
-    delay = max(0, quota["reset_at"] - time.monotonic())
-    if estimated > quota["remaining"] and delay:
-        run.event("provider_pacing", seconds=round(delay, 3), remaining=quota["remaining"])
+def pace(path, run):
+    quota = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    calls = quota.get("calls", 0)
+    if calls >= int(os.environ.get("AUTOSE_MAX_PROVIDER_CALLS", "30")):
+        raise ValueError("The run exhausted its provider call budget")
+    delay = max(0, quota.get("reset_at", 0) - time.monotonic())
+    if delay:
+        run.event("provider_pacing", seconds=round(delay, 3), remaining=quota.get("remaining"))
         time.sleep(delay)
+    return calls + 1
 
 
-def save_quota(path, headers):
+def save_quota(path, headers, calls):
+    if path is None:
+        return
     raw = headers.get("x-ratelimit-remaining-tokens", "")
     match = re.fullmatch(r"(?:(\d+)m)?([\d.]+)s", headers.get("x-ratelimit-reset-tokens", ""))
-    if path is not None and raw.isdigit() and match:
-        delay = int(match[1] or 0) * 60 + float(match[2])
-        path.write_text(json.dumps(dict(remaining=int(raw), reset_at=time.monotonic() + delay + 1)),
-                        encoding="utf-8")
+    reset = int(match[1] or 0) * 60 + float(match[2]) if match else 0
+    retry = headers.get("retry-after", "")
+    delay = max(60, reset, float(retry) if retry.isdigit() else 0)
+    path.write_text(json.dumps(dict(remaining=int(raw) if raw.isdigit() else None,
+                                    reset_at=time.monotonic() + delay, calls=calls)),
+                    encoding="utf-8")
 
 
-def chat(body, key, run, attempt):
+def _chat(body, key, run, attempt):
+    if os.getenv("AUTOSE_RATE_STATE"):
+        # Estimate the prompt from message/tool text and reserve protocol overhead.
+        # Groq still owns the exact model tokenizer and has the final say.
+        prompt = json.dumps([body["messages"], body.get("tools", [])], ensure_ascii=False)
+        available = 8000 - 400 - (len(prompt.encode("utf-8")) + 2) // 3
+        if available < 900:
+            raise ValueError("Request exceeds the live prompt budget. Narrow the issue or retrieved excerpts.")
+        body = {**body, "max_completion_tokens": min(available, body["max_completion_tokens"])}
+        if body["model"].startswith("openai/gpt-oss-"):
+            body["reasoning_format"] = "hidden"
+            if "tools" in body and not any(
+                tool["function"]["name"].startswith("submit_") for tool in body["tools"]
+            ):
+                body["reasoning_effort"] = "low"
     request_bytes = json.dumps(body).encode("utf-8")
     run.write(f"attempt-{attempt}-request.json", request_bytes.decode("utf-8"))
     req = request.Request(
@@ -42,7 +61,7 @@ def chat(body, key, run, attempt):
     )
     state = os.getenv("AUTOSE_RATE_STATE")
     quota_path = Path(state) if state else None
-    pace(quota_path, len(request_bytes), body.get("max_completion_tokens", 0), run)
+    calls = pace(quota_path, run) if quota_path else None
     run.event("request_start", attempt=attempt)
     start = time.monotonic()
     transport_error = None
@@ -61,7 +80,7 @@ def chat(body, key, run, attempt):
         name.lower(): value for name, value in headers.items()
         if name.lower().startswith("x-ratelimit") or name.lower() in ("retry-after", "x-request-id")
     }
-    save_quota(quota_path, meta)
+    save_quota(quota_path, meta, calls)
     run.save(f"attempt-{attempt}.json", dict(
         status=status, headers=meta,
         seconds=round(time.monotonic() - start, 3),
@@ -92,6 +111,25 @@ def chat(body, key, run, attempt):
     return status, meta, message, usage
 
 
+def chat(body, key, run, attempt):
+    if not os.getenv("AUTOSE_RATE_STATE"):
+        return _chat(body, key, run, attempt)
+    try:
+        result = _chat(body, key, run, attempt)
+        retry_after = result[1].get("retry-after", "")
+        if (result[0] not in (429, 500, 502, 503, 504)
+                or retry_after.isdigit() and int(retry_after) > 120):
+            return result
+    except RuntimeError as exc:
+        if not str(exc).startswith("Groq transport failed"):
+            raise
+    for failure in run.path.glob(f"attempt-{attempt}*"):
+        if failure.name == f"attempt-{attempt}.json" or failure.name.startswith(f"attempt-{attempt}-"):
+            failure.rename(failure.with_name(failure.name.replace(f"attempt-{attempt}", f"attempt-{attempt}-first", 1)))
+    run.event("provider_retry", attempt=attempt)
+    return _chat(body, key, run, attempt)
+
+
 def complete(body, key, run, attempt):
     status, meta, message, usage = chat(body, key, run, attempt)
     if message is None:
@@ -101,3 +139,22 @@ def complete(body, key, run, attempt):
         raise ValueError("Groq returned no text completion")
     run.write(f"attempt-{attempt}-completion.txt", content)
     return status, meta, content, usage
+
+
+def provider_error_code(run, attempt):
+    path = run.path / f"attempt-{attempt}-error.txt"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("error", {}).get("code")
+    except (ValueError, AttributeError):
+        return None
+
+
+def parse_json_answer(text):
+    value = text.strip()
+    if value.startswith("```") and value.endswith("```"):
+        opener, _, body = value.partition("\n")
+        if opener.strip().casefold() in ("```", "```json"):
+            value = body.removesuffix("```").strip()
+    return json.loads(value)

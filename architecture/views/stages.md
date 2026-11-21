@@ -13,6 +13,22 @@ The application revision is selected independently of the harness. Issue #2
 uses `a3/bug02-seed` at `1e2b7f2`. The other four issues use `main` at
 `2c96e36`. Private tests evaluate a frozen result separately.
 
+## Tools and execution
+
+| Role | Access |
+| --- | --- |
+| Planner | Design can call `list_files`, `find_files`, `search_text` and `read_file` on the pinned public tree. Requirements and final Design writing are text calls. |
+| Builder | Receives bounded excerpts and an editable path list. Proposes exact replacements and a Python test module. Trusted runners apply edits, compile, and execute the public tests against the clean and candidate revisions. |
+| Release | A trusted script verifies the base and tested head, pushes the candidate, opens or reuses the PR, and checks GitHub CI. |
+| Reviewer | Can use the pinned lookup tools and request `run_public_suite` in an isolated runner. A separate job posts the verdict. |
+
+Planner, Builder and Reviewer use GPT-OSS 120B in the demo configuration.
+Release is scripted. The hosted controller dispatches one repair from public
+test or source lint evidence. For review changes, the workflow records the
+stage to revise and accepts a second review after a maintainer updates the
+same PR. The [later observed PR 15 sequence](sequence.md) includes exact-head
+CI and posted review.
+
 ## Observed Issue #3 sequence
 
 ```mermaid

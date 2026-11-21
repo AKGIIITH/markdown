@@ -50,7 +50,31 @@ budget variables. The release job verifies the pinned fork and base and opens
 or reuses a PR for the tested head. A read-only job verifies CI before starting
 independent review. Review posting is a separate job. Offline responses
 exercised PR creation and reuse, absent CI, an incomplete CI matrix, stale PR
-heads, and the two-round review cap. No hosted run has exercised these jobs.
+heads, and the two-round review cap. No hosted run has reached those jobs.
+
+## Hosted baseline runs
+
+| Issue | Run | Requirements | Design | Implementation and Testing | Known tokens |
+| --- | --- | --- | --- | --- | --- |
+| [1](https://github.com/AKGIIITH/markdown/issues/1) | [44633946770](https://github.com/AKGIIITH/markdown/actions/runs/44633946770) | Provider JSON validation error | Skipped | Skipped | Unknown |
+| [2](https://github.com/AKGIIITH/markdown/issues/2) | [44634053271](https://github.com/AKGIIITH/markdown/actions/runs/44634053271) | Provider JSON validation error | Skipped | Skipped | Unknown |
+| [3](https://github.com/AKGIIITH/markdown/issues/3) | [44632999808](https://github.com/AKGIIITH/markdown/actions/runs/44632999808) | Passed | Failed at handoff writing | Skipped | 24,733 |
+| [4](https://github.com/AKGIIITH/markdown/issues/4) | [44634182887](https://github.com/AKGIIITH/markdown/actions/runs/44634182887) | Provider JSON validation error | Skipped | Skipped | Unknown |
+| [5](https://github.com/AKGIIITH/markdown/issues/5) | [44634287166](https://github.com/AKGIIITH/markdown/actions/runs/44634287166) | Paused for material ambiguity | Skipped | Skipped | 3,885 |
+
+All five attempts used the workflow on `main` at `4d8aeea` and passed
+trigger authorization. Requirements passed one of five runs. Three provider
+responses returned `json_validate_failed` with empty failed generations and
+unreported usage. The quality check paused Issue #5 on the exact exit code,
+the error message, and whether traceback suppression should extend to other
+errors.
+
+Design ran once. It collected pinned source and public-test excerpts, then
+its writer hit the 4,000-token cap with 3,753 reasoning tokens and an empty
+draft. Implementation and Testing were skipped on all five issues, and no
+hosted candidate reached private evaluation. Publication and review were
+disabled for this batch. Known usage was 28,618 tokens across nine distinct
+provider responses, plus three attempts with unreported usage.
 
 ## Deployment and evaluation status
 
@@ -59,8 +83,67 @@ heads, and the two-round review cap. No hosted run has exercised these jobs.
 | Issue trigger, Requirements through Testing, Release bundle | Implemented and replayed locally with fixtures |
 | Publication, exact-head CI gate, Reviewer and review posting | Implemented and exercised with offline GitHub and model fixtures |
 | Review changes return path | The poster records the responsible stage and next round. Automatic execution of the repair and updating the same PR remain pending. |
-| Hosted baseline for five issues | Pending activation and runs |
-| Experiments and final evidence | Two ADR experiments await selection after baseline observations. Reviewer-check PRs, aggregate results, report and demo remain pending. |
+| Hosted baseline for five issues | All five attempts recorded. No run reached Implementation. |
+| Experiments and final evidence | Three stage comparisons and five blinded reviewer checks recorded. See the report and demo. |
+
+The [stage comparisons](comparisons.md) select strict Requirements schema
+and patch-only Builder testing context for the next configuration. The
+deployed baseline remains available as the comparison control.
+
+## Selected settings validation
+
+The selected configuration at `b7ed127` was then run locally with live Groq
+requests on the five original public issue snapshots. Issues #1, #2 and #4
+received the same provider JSON-validation error from byte-identical requests
+that had succeeded during the format experiment. Issues #3 and #5 passed
+Requirements and stopped in Design. Issue #3 produced a defective draft;
+Issue #5 ran out of lookup calls without reading a public test.
+
+No run reached Builder and no new candidate was frozen. The five runs used
+40,166 reported tokens across 13 responses, with three unreported attempts.
+This validation used the selected local harness. It did not replace the
+recorded hosted baseline.
+
+The Release check independently verified the five real fork targets and
+reconstructed a tested Issue #3 Git bundle. A simulated GitHub API exercised
+PR creation and reuse with the exact tested head. The real fork had automatic
+publication disabled and no release credential, so this check sent no writes.
+
+## Bounded recovery validation
+
+All five local recovery attempts produced structurally valid Requirements
+proposals. Issues #1 and #4 paused for clarification. Requirements passed
+on Issues #2, #3 and #5. Design stopped at missing public-test reads for
+Issues #2 and #5 and at an uncited public-test excerpt for Issue #3.
+Implementation was skipped in all five. The batch reported 61,364 tokens,
+with one provider response unreported.
+
+The recovery adds a text fallback for provider JSON-validation errors,
+literal search of pinned public source and tests, and support for equivalent
+numbered Design mappings. The [recovery ADR](../architecture/decisions/ADR-009-recovery-and-restart.md)
+also records the one-step Requirements repair and restart policy.
+
+## Additional guided pilot and reviewer benchmark
+
+[PR #13](https://github.com/AKGIIITH/markdown/pull/13) targets the seeded
+Issue #2 base `a3/bug02-seed` at tested head `c4d344d`. Groq proposed
+deleting the seeded separator override, but its surrounding text did not
+match the file. Codex applied just the proposed deletion in a separate
+attempt and authored five public tests. Two failed on the seed and all five
+passed on the candidate. The full suite had 1,117 passes and 111 skips.
+The frozen candidate passed all three private checks. Eleven GitHub checks
+passed for the same published revision. The changelog check failed because
+the candidate left `docs/changelog.md` untouched. The release script recorded
+`ci_failed` and the normal review gate stayed closed.
+See the [failed GitHub check](https://github.com/AKGIIITH/markdown/actions/runs/44789153616/job/136471891273).
+
+The five [blinded reviewer checks](reviewer-results.md) produced two
+correct verdicts, two incorrect verdicts and one unavailable verdict.
+Four model findings were posted as review comments on the exact draft heads.
+The benchmark's private oracle labels were withheld from all model inputs.
+
+The [report](report.pdf), [demo](demo.mp4), and [submission URL](../submission.txt)
+are packaged with this evidence.
 
 The fork's protected `main` must contain the workflow before issue events
 can start it. Publication and review are opt-in. Deployment uses the
@@ -70,3 +153,62 @@ The release credential needs repository content and PR write access. The
 posting credential needs PR write access and an identity separate from the
 PR author. The reviewer job itself receives a read-only GitHub token. The
 workflow has no merge step.
+
+## Assignment Parts 1–3 audit
+
+| Part | Evidence and status |
+| --- | --- |
+| 1. Repository setup | The application is pinned to `2c96e36ba4750cf18583d62e2fcecff49e077419`. Issue #2 uses seed `1e2b7f27aeefe70057025a1da0d10006dd11ad48`. The fork has five issues covering two bugs, two features, and a vague request. Each has three private tests stored outside Git. The Groq repository secret and protected default branch were verified during deployment. |
+| 2. Design before build | The component view and first ADRs were committed in `e465600`, before the integrated workflow. An instrumented Requirements pilot already existed at `6e699a6`. The strict design-before-any-agent-code condition was therefore only partly met. The original ADRs remain in Git and ADR-003 identifies the policy it replaces. |
+| 3. Workflow and evidence | The hosted issue trigger, per-job permissions, pinned public source tools and stage artifacts are implemented. Hosted baseline failures have Action links. Guided PRs and blinded review comments have real links. The hosted publish and review jobs are disabled, and there is no autonomous issue-to-PR example yet. |
+
+See the [stage and tool inventory](../architecture/views/stages.md).
+
+## Issue #3 failure trace and repair experiment
+
+The experiment reused the accepted live Requirements for the same issue
+snapshot, application pin and Groq model. Design used up to four tool calls
+and one writer call. The caps were 3,000 per lookup and 4,000 for writing.
+Builder used 3,000 for Implementation and 4,000 for the test writer.
+
+| Step | Observed result |
+| --- | --- |
+| Original Design | Four successful tool calls found and read the relevant table source and public test. The writer omitted the exact test path and guessed a default whose semantics the initial source range did not show. |
+| Design with configuration excerpts | Passed the structural gate and cited the public test. The writer ended normally after 3,769 completion tokens and still proposed `None` for a string-valued option. |
+| Builder and public runner | Builder implemented the proposed default and compiled. Identical tests had one pass and four errors on both revisions. On the candidate, the API rejected both class strings during boolean parsing. The clean full suite passed, and the candidate suite recorded four errors. The tests also missed distinct tables and assumed CSS class order. |
+| Builder repair | Given the failed public runner artifacts, the same model chose an empty-string default. The patch compiled. The test writer exhausted 4,000 completion tokens, including 3,676 reasoning tokens, and returned an incomplete module. This patch is compiled and awaits complete public tests. |
+
+The three new live stage attempts used 44,337 reported tokens, with no
+unreported responses. A separate operator-authored smoke probe passed on
+the repaired patch. It checked two distinct tables, unordered class tokens,
+default rendering, headers, and cells. The probe does not replace the public
+test-generation gate. The test-only restart was verified offline against an
+earlier fixture, including exact patch reproduction and zero Implementation
+calls. These were operator-run stage transitions. No new PR was opened.
+See [ADR-010](../architecture/decisions/ADR-010-design-configuration-evidence.md)
+and [ADR-011](../architecture/decisions/ADR-011-builder-public-feedback.md).
+
+## LangGraph Builder experiment
+
+An offline Issue #3 replay used four scripted Implementation calls, including
+one Planner answer, and one scripted test-submission call. The public tools
+returned the pinned setter excerpt and the Planner answer to Builder. The
+clean checkout recorded one public pass and two errors. The candidate passed
+all three public checks and the full suite with 1,115 passes and 111 skips.
+Release preflight reconstructed the tested candidate. A smaller call limit
+correctly rejected a clarification that would leave no call for submission.
+
+The approved live replay used Groq GPT-OSS 20B with per-call caps of 3,000
+for Implementation and 4,000 for Testing, up to four calls for either task.
+Builder's first call successfully read lines 200–258 of the pinned table
+extension. The second request received HTTP 429 `rate_limit_exceeded` on
+tokens per day. It returned no model message. No clarification, patch, or
+tests were produced in the live attempt. Known usage was 5,083 tokens with
+one unreported request. See [ADR-012](../architecture/decisions/ADR-012-langgraph-builder.md).
+
+The [full Issue #3 input and gate trace](issue-3-sdk-trace.md) compares a fresh
+run from the live issue and a separate replay from the matching accepted
+Design.
+
+The [120B experiment](issue-3-120b.md) records the larger model, the
+maintainer's scope approval, and the subsequent stage evidence.

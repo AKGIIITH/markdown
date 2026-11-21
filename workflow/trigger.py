@@ -13,6 +13,7 @@ from .baseline import CASES
 FORK = "AKGIIITH/markdown"
 TRIGGER_LABEL = "autose:run"
 TRIGGER_COMMENT = "/autose run"
+REVIEW_COMMENT = "/autose review"
 
 
 def selected_issue(event, kind, actor):
@@ -34,6 +35,20 @@ def selected_issue(event, kind, actor):
     return None
 
 
+def selected_review(event, kind, actor):
+    issue = event.get("issue", {})
+    comment = event.get("comment", {})
+    sender = event.get("sender", {}).get("login")
+    number = issue.get("number")
+    if (kind == "issue_comment" and event.get("action") == "created"
+            and event.get("repository", {}).get("full_name") == FORK and actor
+            and sender == actor and comment.get("user", {}).get("login") == sender
+            and comment.get("body", "").strip() == REVIEW_COMMENT and "pull_request" in issue
+            and issue.get("state") == "open" and type(number) is int and number > 0):
+        return number
+    return None
+
+
 def may_trigger(token, actor):
     endpoint = f"https://api.github.com/repos/{FORK}/collaborators/{quote(actor, safe='')}/permission"
     request = Request(endpoint, headers={
@@ -52,19 +67,30 @@ def main():
     parser.add_argument("--event-name", required=True)
     parser.add_argument("--actor", required=True)
     parser.add_argument("--issue-out", type=Path)
+    parser.add_argument("--outputs", type=Path, help="Append the authorized issue or review PR to GitHub outputs.")
     args = parser.parse_args()
     event = json.loads(args.event_file.read_text(encoding="utf-8"))
     issue = selected_issue(event, args.event_name, args.actor)
-    if issue is None:
+    review = selected_review(event, args.event_name, args.actor)
+    if issue is None and review is None:
         return 0
     if args.issue_out:
+        if issue is None:
+            return 0
         title = issue.get("title") or ""
         body = issue.get("body") or ""
         args.issue_out.write_text(f"# {title}\n\n{body}\n", encoding="utf-8")
         return 0
     if not may_trigger(os.environ["GITHUB_TOKEN"], args.actor):
         return 0
-    print(issue["number"])
+    if args.outputs:
+        with args.outputs.open("a", encoding="utf-8") as stream:
+            if issue:
+                print(f"issue={issue['number']}", file=stream)
+            else:
+                print(f"review_pr={review}", file=stream)
+    elif issue:
+        print(issue["number"])
     return 0
 
 
