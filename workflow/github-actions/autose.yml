@@ -96,6 +96,7 @@ jobs:
             ${{ runner.temp }}/autose-model/*/*/*.jsonl
             ${{ runner.temp }}/autose-model/*/*/*.txt
             ${{ runner.temp }}/autose-model/*/*/*.md
+            ${{ runner.temp }}/autose-model/*/*/public-tests.py
             ${{ runner.temp }}/autose-model/*/*/*.patch
             ${{ runner.temp }}/autose-model/*/*/*.log
       - uses: actions/upload-artifact@v4
