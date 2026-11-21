@@ -107,8 +107,14 @@ def run_builder_stage(stage, body, planning_inputs, source, respond, run, budget
             tools += TOOLS
         if implementation and not state["asked_planner"] and state["calls_used"] + 2 < budget:
             tools.append(planner_tool)
-        request_body = dict(**base, messages=state["messages"], tools=tools,
-                            tool_choice="required", parallel_tool_calls=False)
+        messages = state["messages"]
+        choice = "required"
+        if len(tools) == 1:
+            choice = {"type": "function", "function": {"name": submit}}
+            messages = [*messages, {"role": "user", "content":
+                        f"Repository lookup is complete. Submit the final artifact using {submit} now."}]
+        request_body = dict(**base, messages=messages, tools=tools,
+                            tool_choice=choice, parallel_tool_calls=False)
         message, finish = request(request_body, state)
         calls = message.get("tool_calls") or []
         if (finish != "tool_calls" or not isinstance(calls, list) or len(calls) != 1

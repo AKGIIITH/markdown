@@ -72,7 +72,7 @@ if [[ "$default_branch" != main ]]; then
 fi
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-for path in .github/workflows/autose.yml workflow/design.py; do
+for path in .github/workflows/autose.yml workflow/{controller,design,requirements,sdk_builder,model,builder,pilot,publish,release,review,post_review,trigger,baseline,github}.py workflow/skills/requirements.md workflow/requirements-builder-sdk.txt workflow/Dockerfile.review; do
     if ! deployed=$(gh api "repos/$repo/contents/$path?ref=main" --jq '.sha'); then
         printf 'Could not verify %s on GitHub main. Check its deployment and your GitHub CLI access.\n' "$path" >&2
         exit 1
@@ -117,7 +117,19 @@ for issue in "$@"; do
     fi
 
     printf 'Issue #%s Actions run: https://github.com/%s/actions/runs/%s\n' "$issue" "$repo" "$run"
-    if ! gh run watch "$run" --repo "$repo" --exit-status; then
+    # Bound the terminal wait even when a hosted runner stays queued.
+    if ! python3 - "$run" "$repo" <<'WATCH'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(["gh", "run", "watch", sys.argv[1], "--repo", sys.argv[2], "--exit-status"],
+                            timeout=90 * 60)
+except subprocess.TimeoutExpired:
+    sys.exit("Stopped watching after 90 minutes. Check the Actions URL for the current job.")
+sys.exit(result.returncode)
+WATCH
+    then
         diagnose_run "$run" || true
         status=1
     fi
@@ -127,16 +139,26 @@ for issue in "$@"; do
         printf 'Could not download the publication or review artifacts. Inspect the run jobs above for failed or skipped gates.\n' >&2
         status=1
     }
-    python3 - "$out" <<'PY'
+    if ! python3 - "$out" "$issue" <<'PY'
 import json
 from pathlib import Path
 import sys
 
 directory = Path(sys.argv[1])
-for name in ("pr.json", "posted-review.json"):
-    for path in directory.rglob(name):
-        result = json.loads(path.read_text(encoding="utf-8"))
-        print(result["url"])
+records = []
+for artifact, name in (("autose-publication", "pr.json"), ("autose-posted-review", "posted-review.json")):
+    paths = list((directory / artifact).rglob(name))
+    if len(paths) != 1:
+        sys.exit(f"Issue #{sys.argv[2]} requires one {name} in {artifact}, found {len(paths)}")
+    records.append(json.loads(paths[0].read_text(encoding="utf-8")))
+pr, review = records
+if pr["issue"] != int(sys.argv[2]) or any(pr[k] != review[k] for k in ("issue", "number", "head_sha")):
+    sys.exit("Publication and review do not identify the requested issue and same PR revision")
+print(pr["url"])
+print(review["url"], review["verdict"])
 PY
+    then
+        status=1
+    fi
 done
 exit "$status"

@@ -6,10 +6,10 @@ import os
 from pathlib import Path
 
 if __package__:
-    from .baseline import BASE, CASES, MODEL, Run, git, planner, validate
+    from .baseline import CASES, MODEL, Run, planner, regression_context, validate
     from .model import complete, parse_json_answer, provider_error_code
 else:
-    from baseline import BASE, CASES, MODEL, Run, git, planner, validate
+    from baseline import CASES, MODEL, Run, planner, regression_context, validate
     from model import complete, parse_json_answer, provider_error_code
 
 
@@ -128,12 +128,7 @@ def main():
         issue_path = args.issue_file or args.repo / "experiment/issues" / issue_file
         issue = issue_path.read_text(encoding="utf-8")
         audit_input = dict(issue=issue, proposal=proposal)
-        if args.issue == 2:
-            # The public seeded change records which heading behavior regressed.
-            # Give the auditor evidence for compatibility questions on a rerun.
-            audit_input["public_seed_change"] = git(
-                args.repo, "diff", BASE, revision, "--", "markdown/extensions/toc.py"
-            ).decode()
+        audit_input.update(regression_context(args.repo, revision))
         body = dict(
             model=MODEL, temperature=0, max_completion_tokens=3000,
             response_format={"type": "json_object"},
