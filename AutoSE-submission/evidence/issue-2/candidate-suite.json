@@ -1,0 +1,22 @@
+{
+  "command": [
+    "/usr/bin/python3",
+    "-m",
+    "unittest",
+    "discover",
+    "tests",
+    "-v"
+  ],
+  "checkout": "/tmp/autose-demo-base-2.hbvY/20261121T131749Z-public-testing-replay-e6aacd49/candidate",
+  "exit_code": 0,
+  "seconds": 1.902,
+  "counts": {
+    "tests": 1228,
+    "passed": 1117,
+    "skipped": 111,
+    "failures": 0,
+    "errors": 0,
+    "expected_failures": 0,
+    "unexpected_successes": 0
+  }
+}

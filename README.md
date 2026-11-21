@@ -1,3 +1,7 @@
+# AutoSE assignment submission
+
+[Final report](report.pdf) · [Demo video](AutoSE-submission/demo.mp4) · [Run and review evidence](AutoSE-submission/results/runs.md) · [Submission guide and reproducible workflow](AutoSE-submission/README.md)
+
 [Python-Markdown][]
 ===================
 

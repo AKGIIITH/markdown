@@ -1,0 +1,9 @@
+{
+  "verdict": "APPROVE",
+  "route": null,
+  "MERGE_READINESS_CHECK": "READY_FOR_HUMAN",
+  "issue": 3,
+  "number": 29,
+  "head_sha": "2d1b5c42050b75c7851bbf660590f90fc647e748",
+  "round": 1
+}
